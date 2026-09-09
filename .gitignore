@@ -1,0 +1,10 @@
+bin/
+obj/
+
+*.depend
+*.layout
+
+.DS_Store
+
+# Runtime save data, not source - see include/highscore.h
+highscore.dat
