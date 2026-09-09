@@ -89,28 +89,37 @@ WaveDifficulty wave_get_difficulty(const WaveState *wave)
         break;
 
     case 3:
-        // HEAVY CONTACT - Bombers arrive, firing a bit more forgiving
-        // than the old 1800 baseline while the player adjusts to them.
+        // HEAVY CONTACT - Bombers arrive. Previously this wave also
+        // slashed the scout and asteroid delays most of the way to
+        // their Wave 4 values in the same step as introducing a brand
+        // new enemy type, which stacked three difficulty increases
+        // (new threat + faster scouts + far more asteroids) into one
+        // jump and made this the wall most runs died on. Eased back
+        // so introducing Bombers doesn't coincide with the biggest
+        // spawn-rate jump in the whole progression - Wave 4 now picks
+        // up more of that ramp instead.
         difficulty.scouts_enabled = 1;
         difficulty.bombers_enabled = 1;
         difficulty.asteroids_enabled = 1;
-        difficulty.scout_spawn_delay = 1300;
-        difficulty.bomber_spawn_delay = 3500;
-        difficulty.asteroid_spawn_delay = 2000;
-        difficulty.scout_fire_delay = 1200;
+        difficulty.scout_spawn_delay = 1800;
+        difficulty.bomber_spawn_delay = 4200;
+        difficulty.asteroid_spawn_delay = 3200;
+        difficulty.scout_fire_delay = 1400;
         difficulty.bomber_fire_delay = 2200;
         break;
 
     case 4:
-        // CROSS FIRE - across-the-board pressure increase.
+        // CROSS FIRE - across-the-board pressure increase, but now a
+        // step up from an already-survivable Wave 3 rather than
+        // stacking onto one that was already close to overwhelming.
         difficulty.scouts_enabled = 1;
         difficulty.bombers_enabled = 1;
         difficulty.asteroids_enabled = 1;
-        difficulty.scout_spawn_delay = 1000;
-        difficulty.bomber_spawn_delay = 3000;
-        difficulty.asteroid_spawn_delay = 1800;
-        difficulty.scout_fire_delay = 1100;
-        difficulty.bomber_fire_delay = 2000;
+        difficulty.scout_spawn_delay = 1400;
+        difficulty.bomber_spawn_delay = 3600;
+        difficulty.asteroid_spawn_delay = 2600;
+        difficulty.scout_fire_delay = 1250;
+        difficulty.bomber_fire_delay = 2100;
         break;
 
     case 5:

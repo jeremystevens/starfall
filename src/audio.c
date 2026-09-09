@@ -5,7 +5,7 @@
 #include <stdlib.h>
 
 // Player laser: a descending square-wave "pew".
-#define SAMPLE_RATE 44100
+// (SAMPLE_RATE now lives in audio.h, shared with music.c.)
 #define LASER_FREQUENCY 900.0
 #define LASER_DURATION 4000
 
@@ -311,6 +311,26 @@ static void audio_callback(void *userdata, Uint8 *stream, int len)
                 (2.0 * M_PI * frequency) / SAMPLE_RATE;
         }
 
+        // Music (see music.h) - mixed in last, already scaled down by
+        // its own independent volume so it sits below whatever SFX
+        // happen to be playing at the same time.
+        sample += music_next_sample(&sound->music);
+
+        // Safety clamp on the final mixed signal - with this many
+        // independent voices able to overlap (SFX and now music
+        // together), nothing before this point guarantees the sum
+        // stays within the [-1, 1] range AUDIO_F32SYS expects, and an
+        // unclamped sample here would clip/distort at the driver
+        // instead of just capping cleanly.
+        if (sample > 1.0f)
+        {
+            sample = 1.0f;
+        }
+        else if (sample < -1.0f)
+        {
+            sample = -1.0f;
+        }
+
         buffer[i] = sample;
     }
 }
@@ -370,6 +390,8 @@ int audio_init(LaserSound *laser)
     laser->boss_warning_active = 0;
     laser->boss_warning_phase = 0.0;
     laser->boss_warning_pulse_sample = 0;
+
+    music_init(&laser->music);
 
     audio_device = SDL_OpenAudioDevice(
         NULL,
@@ -547,6 +569,45 @@ void audio_play_new_high_score(LaserSound *laser)
     SDL_UnlockAudioDevice(audio_device);
 }
 
+// True once new_high_score_note_index has reached NEW_HIGH_SCORE_NOTE_COUNT
+// - the exact same "idle" value audio_init() and audio_stop_new_high_score()
+// both use, and the value the audio callback itself only ever reaches once
+// the fanfare's real last note has actually finished. If the device never
+// opened, there's nothing to wait for either.
+int audio_new_high_score_finished(const LaserSound *laser)
+{
+    if (audio_device == 0)
+    {
+        return 1;
+    }
+
+    SDL_LockAudioDevice(audio_device);
+
+    int finished =
+        (laser->new_high_score_note_index >= NEW_HIGH_SCORE_NOTE_COUNT);
+
+    SDL_UnlockAudioDevice(audio_device);
+
+    return finished;
+}
+
+// Force the fanfare to the same idle state a normal completion leaves
+// it in - see audio_init()'s identical assignment. Silences it
+// immediately rather than waiting for its remaining notes to play out.
+void audio_stop_new_high_score(LaserSound *laser)
+{
+    if (audio_device == 0)
+    {
+        return;
+    }
+
+    SDL_LockAudioDevice(audio_device);
+
+    laser->new_high_score_note_index = NEW_HIGH_SCORE_NOTE_COUNT;
+
+    SDL_UnlockAudioDevice(audio_device);
+}
+
 // Turn the Dreadnought warning klaxon on or off.
 void audio_set_boss_warning(LaserSound *laser, int active)
 {
@@ -567,6 +628,137 @@ void audio_set_boss_warning(LaserSound *laser, int active)
         laser->boss_warning_phase = 0.0;
         laser->boss_warning_pulse_sample = 0;
     }
+
+    SDL_UnlockAudioDevice(audio_device);
+}
+
+// Start a music track on the melody voice. Locked the same way every
+// audio_play_*() function above already is, delegating the actual
+// field mutation to music.c's own (lock-free) music_start_voice() -
+// music.c has no idea SDL, an audio device, or locking exist.
+void audio_music_start(
+    LaserSound *laser,
+    const MusicNote *notes,
+    int note_count,
+    int loop
+)
+{
+    if (audio_device == 0)
+    {
+        return;
+    }
+
+    SDL_LockAudioDevice(audio_device);
+
+    // Every new composition explicitly starts at normal speed - see
+    // this function's doc comment in audio.h for why this reset lives
+    // here rather than being left to each call site to remember.
+    music_set_playback_rate(&laser->music, 1.0);
+
+    music_start_voice(&laser->music, 0, notes, note_count, loop);
+
+    SDL_UnlockAudioDevice(audio_device);
+}
+
+// Start a music track on an arbitrary voice, without touching
+// playback_rate - see this function's doc comment in audio.h.
+void audio_music_start_voice(
+    LaserSound *laser,
+    int voice_index,
+    const MusicNote *notes,
+    int note_count,
+    int loop
+)
+{
+    if (audio_device == 0)
+    {
+        return;
+    }
+
+    SDL_LockAudioDevice(audio_device);
+
+    music_start_voice(&laser->music, voice_index, notes, note_count, loop);
+
+    SDL_UnlockAudioDevice(audio_device);
+}
+
+// Start two voices as a single locked operation, both from event 0,
+// with playback_rate reset to 1.0 first. Exists so a two-voice
+// composition (e.g. Blue Danube's melody + accompaniment) can begin
+// with both voices sample-aligned - calling audio_music_start() then
+// audio_music_start_voice() separately would still be correct, but
+// leaves a window between the two unlocks where the audio callback
+// could run and read voice 0 already active while voice 1 is still
+// silent, offsetting the two voices' start positions by however many
+// samples that callback produced. Generic over which two tracks -
+// like every other function here, it has no idea one of them is a
+// title theme.
+void audio_music_start_dual(
+    LaserSound *laser,
+    const MusicNote *notes0,
+    int note_count0,
+    int loop0,
+    const MusicNote *notes1,
+    int note_count1,
+    int loop1
+)
+{
+    if (audio_device == 0)
+    {
+        return;
+    }
+
+    SDL_LockAudioDevice(audio_device);
+
+    music_set_playback_rate(&laser->music, 1.0);
+
+    music_start_voice(&laser->music, 0, notes0, note_count0, loop0);
+    music_start_voice(&laser->music, 1, notes1, note_count1, loop1);
+
+    SDL_UnlockAudioDevice(audio_device);
+}
+
+// Stop all music voices immediately.
+void audio_music_stop(LaserSound *laser)
+{
+    if (audio_device == 0)
+    {
+        return;
+    }
+
+    SDL_LockAudioDevice(audio_device);
+
+    music_stop_all(&laser->music);
+
+    SDL_UnlockAudioDevice(audio_device);
+}
+
+// Set the overall music volume (0.0-1.0).
+void audio_music_set_volume(LaserSound *laser, float volume)
+{
+    if (audio_device == 0)
+    {
+        return;
+    }
+
+    SDL_LockAudioDevice(audio_device);
+
+    music_set_volume(&laser->music, volume);
+
+    SDL_UnlockAudioDevice(audio_device);
+}
+
+// Set how fast musical time advances for every voice.
+void audio_music_set_playback_rate(LaserSound *laser, double playback_rate)
+{
+    if (audio_device == 0)
+    {
+        return;
+    }
+
+    SDL_LockAudioDevice(audio_device);
+
+    music_set_playback_rate(&laser->music, playback_rate);
 
     SDL_UnlockAudioDevice(audio_device);
 }

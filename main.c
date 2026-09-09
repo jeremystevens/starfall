@@ -21,6 +21,7 @@
 #include "highscore.h"
 #include "screen_effects.h"
 #include "popup.h"
+#include "music.h"
 
 // Target frame rate for the main loop.
 #define TARGET_FPS 60
@@ -53,6 +54,250 @@
 #define PLAYER_DEATH_FLASH_ALPHA 120
 #define PLAYER_DEATH_FLASH_DURATION_MS 300
 
+// Title screen theme (v0.8.0 Phases 3B/4B) - the melody (voice 0,
+// Phase 3B) plus its waltz accompaniment (voice 1, Phase 4B).
+// Transcribed from the Mutopia Project's public-domain piano
+// arrangement of Johann Strauss II's "The Blue Danube Waltz" (Op.
+// 314), Music ID 519, arranged by N. Kouremenos, licensed CC BY-SA 4.0
+// - the 1867 composition itself is long since public domain; this
+// credits only the source arrangement this data was transcribed from.
+// Bars 1-17 (including the pickup), verified note-by-note against
+// both the LilyPond source and its MIDI export during Phases 3A/4A -
+// see those phases' reports for the full transcription, the
+// accompaniment's chord-reduction rule, and cross-checks. Do not
+// hand-edit these values; regenerate from the verified source if a
+// correction is ever needed.
+static const MusicNote BLUE_DANUBE_MELODY[] =
+{
+    { 261.63, 17640 },  // C4, quarter (pickup)
+    { 261.63, 17640 },  // C4, quarter
+    { 329.63, 17640 },  // E4, quarter
+    { 392.00, 17640 },  // G4, quarter
+    { 392.00, 35280 },  // G4, half
+    { 783.99, 17640 },  // G5, quarter
+    { 783.99, 35280 },  // G5, half
+    { 659.26, 17640 },  // E5, quarter
+    { 659.26, 35280 },  // E5, half
+    { 261.63, 17640 },  // C4, quarter
+    { 261.63, 17640 },  // C4, quarter
+    { 329.63, 17640 },  // E4, quarter
+    { 392.00, 17640 },  // G4, quarter
+    { 392.00, 35280 },  // G4, half
+    { 783.99, 17640 },  // G5, quarter
+    { 783.99, 35280 },  // G5, half
+    { 698.46, 17640 },  // F5, quarter
+    { 698.46, 35280 },  // F5, half
+    { 246.94, 17640 },  // B3, quarter
+    { 246.94, 17640 },  // B3, quarter
+    { 293.66, 17640 },  // D4, quarter
+    { 440.00, 17640 },  // A4, quarter
+    { 440.00, 35280 },  // A4, half
+    { 880.00, 17640 },  // A5, quarter
+    { 880.00, 35280 },  // A5, half
+    { 698.46, 17640 },  // F5, quarter
+    { 698.46, 35280 },  // F5, half
+    { 246.94, 17640 },  // B3, quarter
+    { 246.94, 17640 },  // B3, quarter
+    { 293.66, 17640 },  // D4, quarter
+    { 440.00, 17640 },  // A4, quarter
+    { 440.00, 35280 },  // A4, half
+    { 880.00, 17640 },  // A5, quarter
+    { 880.00, 35280 },  // A5, half
+    { 659.26, 17640 },  // E5, quarter
+    { 659.26, 35280 },  // E5, half
+    { 261.63, 17640 },  // C4, quarter
+};
+
+#define BLUE_DANUBE_MELODY_COUNT \
+    (sizeof(BLUE_DANUBE_MELODY) / sizeof(BLUE_DANUBE_MELODY[0]))
+
+// Waltz accompaniment for voice 1 (Phase 4B) - a monophonic
+// bass-on-beat-1 / chord-on-beats-2-and-3 reduction of the source's
+// lower piano staff, source-verified during Phase 4A. Every
+// beat-2/beat-3 chord in this excerpt is reduced to its top tone (G3),
+// the one pitch common to both chord types the source actually uses
+// here (<E3,G3> in the C-bass bars, <F3,G3> in the D-bass bars) - see
+// Phase 4A's report for the full reduction rule and justification.
+// The two leading rest events reproduce the source's own four beats
+// of accompaniment silence under the melody's pickup and first bar;
+// removing them would desync this voice from BLUE_DANUBE_MELODY.
+// Deliberately the same 49 beats / 864,360 samples as voice 0 above -
+// do not edit one without re-verifying the other still matches.
+static const MusicNote BLUE_DANUBE_ACCOMPANIMENT[] =
+{
+    { 0.00, 17640 },    // bar1 pickup rest
+    { 0.00, 52920 },    // bar2 full-bar rest
+    { 130.81, 17640 }, { 196.00, 17640 }, { 196.00, 17640 }, // bar3 C3 G3 G3
+    { 130.81, 17640 }, { 196.00, 17640 }, { 196.00, 17640 }, // bar4
+    { 130.81, 17640 }, { 196.00, 17640 }, { 196.00, 17640 }, // bar5
+    { 130.81, 17640 }, { 196.00, 17640 }, { 196.00, 17640 }, // bar6
+    { 146.83, 17640 }, { 196.00, 17640 }, { 196.00, 17640 }, // bar7 D3 G3 G3
+    { 146.83, 17640 }, { 196.00, 17640 }, { 196.00, 17640 }, // bar8
+    { 146.83, 17640 }, { 196.00, 17640 }, { 196.00, 17640 }, // bar9
+    { 146.83, 17640 }, { 196.00, 17640 }, { 196.00, 17640 }, // bar10
+    { 146.83, 17640 }, { 196.00, 17640 }, { 196.00, 17640 }, // bar11
+    { 146.83, 17640 }, { 196.00, 17640 }, { 196.00, 17640 }, // bar12
+    { 146.83, 17640 }, { 196.00, 17640 }, { 196.00, 17640 }, // bar13
+    { 146.83, 17640 }, { 196.00, 17640 }, { 196.00, 17640 }, // bar14
+    { 130.81, 17640 }, { 196.00, 17640 }, { 196.00, 17640 }, // bar15 C3 G3 G3
+    { 130.81, 17640 }, { 196.00, 17640 }, { 196.00, 17640 }, // bar16
+    { 130.81, 17640 }, { 196.00, 17640 }, { 196.00, 17640 }, // bar17
+};
+
+#define BLUE_DANUBE_ACCOMPANIMENT_COUNT \
+    (sizeof(BLUE_DANUBE_ACCOMPANIMENT) / sizeof(BLUE_DANUBE_ACCOMPANIMENT[0]))
+
+// Dreadnought boss theme (v0.8.0 Phase 5B) - Edvard Grieg, "In the
+// Hall of the Mountain King," Op. 46 No. 4 (Peer Gynt Suite I).
+// Source: Mutopia Project Music ID 1888, Grieg's own public-domain
+// piano reduction (both the 1874 composition and this piano source are
+// public domain - no CC attribution requirement, unlike Blue Danube's
+// arrangement). Bars 2-17 (16 bars, 4/4, base tempo 138 BPM), verified
+// note-by-note against the LilyPond source and its MIDI export during
+// Phase 5A, independently re-summed to confirm exact totals during
+// Phase 5A.1 - see those phases' reports for the full transcription,
+// the two documented octave-doubling reductions in the melody, and the
+// reasoning behind the bar 2-17 loop boundary. Do not hand-edit these
+// values or "correct" their ~0.126ms rounding difference from
+// mathematically exact 138 BPM - that rounding is intentional (see
+// Phase 5A.1); regenerate from the verified source instead if a real
+// correction is ever needed.
+static const MusicNote MOUNTAIN_KING_MELODY[] =
+{
+    // bar 2
+    { 61.74, 9587 },  { 69.30, 9587 },  { 73.42, 9587 },  { 82.41, 9587 },
+    { 92.50, 9587 },  { 73.42, 9587 },  { 92.50, 19174 },
+    // bar 3
+    { 87.31, 9587 },  { 69.30, 9587 },  { 87.31, 19174 },
+    { 82.41, 9587 },  { 65.41, 9587 },  { 82.41, 19174 },
+    // bar 4
+    { 61.74, 9587 },  { 69.30, 9587 },  { 73.42, 9587 },  { 82.41, 9587 },
+    { 92.50, 9587 },  { 73.42, 9587 },  { 92.50, 9587 },  { 123.47, 9587 },
+    // bar 5
+    { 110.00, 9587 }, { 92.50, 9587 },  { 73.42, 9587 },  { 92.50, 9587 }, { 110.00, 38348 },
+    // bar 6
+    { 123.47, 9587 }, { 138.59, 9587 }, { 146.83, 9587 }, { 164.81, 9587 },
+    { 185.00, 9587 }, { 146.83, 9587 }, { 185.00, 19174 },
+    // bar 7
+    { 174.61, 9587 }, { 138.59, 9587 }, { 174.61, 19174 },
+    { 164.81, 9587 }, { 130.81, 9587 }, { 164.81, 19174 },
+    // bar 8
+    { 123.47, 9587 }, { 138.59, 9587 }, { 146.83, 9587 }, { 164.81, 9587 },
+    { 185.00, 9587 }, { 146.83, 9587 }, { 185.00, 9587 }, { 246.94, 9587 },
+    // bar 9
+    { 220.00, 9587 }, { 185.00, 9587 }, { 146.83, 9587 }, { 185.00, 9587 }, { 220.00, 38348 },
+    // bar 10
+    { 92.50, 9587 },  { 103.83, 9587 }, { 116.54, 9587 }, { 123.47, 9587 },
+    { 138.59, 9587 }, { 116.54, 9587 }, { 138.59, 19174 },
+    // bar 11
+    { 146.83, 9587 }, { 116.54, 9587 }, { 146.83, 19174 },
+    { 138.59, 9587 }, { 116.54, 9587 }, { 138.59, 19174 },
+    // bar 12
+    { 92.50, 9587 },  { 103.83, 9587 }, { 116.54, 9587 }, { 123.47, 9587 },
+    { 138.59, 9587 }, { 116.54, 9587 }, { 138.59, 19174 },
+    // bar 13
+    { 146.83, 9587 }, { 116.54, 9587 }, { 146.83, 19174 }, { 138.59, 38348 },
+    // bar 14
+    { 185.00, 9587 }, { 207.65, 9587 }, { 233.08, 9587 }, { 246.94, 9587 },
+    { 277.18, 9587 }, { 233.08, 9587 }, { 277.18, 19174 },
+    // bar 15
+    { 293.66, 9587 }, { 233.08, 9587 }, { 293.66, 19174 },
+    { 277.18, 9587 }, { 233.08, 9587 }, { 277.18, 19174 },
+    // bar 16
+    { 185.00, 9587 }, { 207.65, 9587 }, { 233.08, 9587 }, { 246.94, 9587 },
+    { 277.18, 9587 }, { 233.08, 9587 }, { 277.18, 19174 },
+    // bar 17
+    { 293.66, 9587 }, { 233.08, 9587 }, { 293.66, 19174 }, { 277.18, 38348 },
+};
+
+#define MOUNTAIN_KING_MELODY_COUNT \
+    (sizeof(MOUNTAIN_KING_MELODY) / sizeof(MOUNTAIN_KING_MELODY[0]))
+
+// Voice 1 for the Dreadnought theme - the source's own left-hand bass
+// drone (root/fifth alternation), already monophonic in the source
+// with no chord reduction needed - see Phase 5A's report. Same 64
+// beats / 1,227,136 samples as MOUNTAIN_KING_MELODY above - do not
+// edit one without re-verifying the other still matches (Phase 5A.1
+// re-confirmed this exact total independently for both arrays).
+static const MusicNote MOUNTAIN_KING_ACCOMPANIMENT[] =
+{
+    // bars 2-4 (B minor drone)
+    { 30.87, 19174 }, { 46.25, 19174 }, { 30.87, 19174 }, { 46.25, 19174 },
+    { 30.87, 19174 }, { 46.25, 19174 }, { 30.87, 19174 }, { 46.25, 19174 },
+    { 30.87, 19174 }, { 46.25, 19174 }, { 30.87, 19174 }, { 46.25, 19174 },
+    // bar 5 (cadence)
+    { 36.71, 19174 }, { 55.00, 19174 }, { 36.71, 19174 }, { 55.00, 19174 },
+    // bars 6-8 (repeat)
+    { 30.87, 19174 }, { 46.25, 19174 }, { 30.87, 19174 }, { 46.25, 19174 },
+    { 30.87, 19174 }, { 46.25, 19174 }, { 30.87, 19174 }, { 46.25, 19174 },
+    { 30.87, 19174 }, { 46.25, 19174 }, { 30.87, 19174 }, { 46.25, 19174 },
+    // bar 9 (cadence)
+    { 36.71, 19174 }, { 55.00, 19174 }, { 36.71, 19174 }, { 55.00, 19174 },
+    // bars 10-13 (transposed sequence)
+    { 46.25, 19174 }, { 69.30, 19174 }, { 46.25, 19174 }, { 69.30, 19174 },
+    { 36.71, 19174 }, { 58.27, 19174 }, { 46.25, 19174 }, { 69.30, 19174 },
+    { 46.25, 19174 }, { 69.30, 19174 }, { 46.25, 19174 }, { 69.30, 19174 },
+    { 36.71, 19174 }, { 58.27, 19174 }, { 46.25, 19174 }, { 69.30, 19174 },
+    // bars 14-17 (repeat)
+    { 46.25, 19174 }, { 69.30, 19174 }, { 46.25, 19174 }, { 69.30, 19174 },
+    { 36.71, 19174 }, { 58.27, 19174 }, { 46.25, 19174 }, { 69.30, 19174 },
+    { 46.25, 19174 }, { 69.30, 19174 }, { 46.25, 19174 }, { 69.30, 19174 },
+    { 36.71, 19174 }, { 58.27, 19174 }, { 46.25, 19174 }, { 69.30, 19174 },
+};
+
+#define MOUNTAIN_KING_ACCOMPANIMENT_COUNT \
+    (sizeof(MOUNTAIN_KING_ACCOMPANIMENT) / sizeof(MOUNTAIN_KING_ACCOMPANIMENT[0]))
+
+// Game Over theme (v0.8.0 Phase 6B) - Frederic Chopin, "Marche
+// funebre," Piano Sonata No. 2 in B-flat minor, Op. 35, Mvt. III.
+// Source: Chopin Online (CFEO/OCVE, Universities of Cambridge/King's
+// College London), facsimile of the 1840 Breitkopf & Hartel first
+// edition - public domain. Bars 1-2 only (identical bars in the
+// source; verified note-by-note during Phase 6A - see that phase's
+// report for the full transcription, the bass-clef notation of the
+// melody, and the chord-reduction rule for the accompaniment). The
+// ~20-35s target was deliberately not reached: bar 3 onward could not
+// be verified to this project's required standard, so the excerpt was
+// intentionally shortened rather than guessed. BASE_BPM = 60 is an
+// arrangement choice (Chopin's score gives only "Lento," no numeric
+// tempo) - do not treat it as a source fact. Played once, not looped
+// (see Phase 6B) - bar 2 already repeats bar 1 verbatim, so looping
+// this excerpt would make the repetition too obvious for a one-time
+// Game Over cue.
+static const MusicNote FUNERAL_MARCH_MELODY[] =
+{
+    { 233.08, 44100 },  // Bb3, quarter      (bar 1)
+    { 233.08, 33075 },  // Bb3, dotted-eighth
+    { 207.65, 11025 },  // Ab3, sixteenth
+    { 261.63, 88200 },  // C4,  half
+    { 233.08, 44100 },  // Bb3, quarter      (bar 2)
+    { 233.08, 33075 },  // Bb3, dotted-eighth
+    { 207.65, 11025 },  // Ab3, sixteenth
+    { 261.63, 88200 },  // C4,  half
+};
+
+#define FUNERAL_MARCH_MELODY_COUNT \
+    (sizeof(FUNERAL_MARCH_MELODY) / sizeof(FUNERAL_MARCH_MELODY[0]))
+
+// Accompaniment: the source's low open fifth (Bb1+F2, no third)
+// reduced to its root (Bb1) - see Phase 6A's report for why the root
+// was chosen over the fifth. Same 8 beats / 352,800 samples as
+// FUNERAL_MARCH_MELODY above - do not edit one without re-verifying
+// the other still matches.
+static const MusicNote FUNERAL_MARCH_ACCOMPANIMENT[] =
+{
+    { 58.27, 44100 },  // Bb1, quarter (bar 1, attack 1)
+    { 58.27, 44100 },  // Bb1, quarter (bar 1, attack 2)
+    { 58.27, 44100 },  // Bb1, quarter (bar 1, attack 3)
+    { 58.27, 44100 },  // Bb1, quarter (bar 1, attack 4)
+    { 58.27, 44100 },  // Bb1, quarter (bar 2, attack 1)
+    { 58.27, 44100 },  // Bb1, quarter (bar 2, attack 2)
+    { 58.27, 44100 },  // Bb1, quarter (bar 2, attack 3)
+    { 58.27, 44100 },  // Bb1, quarter (bar 2, attack 4)
+};
+
+#define FUNERAL_MARCH_ACCOMPANIMENT_COUNT \
+    (sizeof(FUNERAL_MARCH_ACCOMPANIMENT) / sizeof(FUNERAL_MARCH_ACCOMPANIMENT[0]))
 
 int score = 0;
 
@@ -61,10 +306,54 @@ typedef enum
 {
     GAME_TITLE,        // Idle on the title screen - no gameplay systems run.
     GAME_PLAYING,
+    GAME_PAUSED,       // GAME_PLAYING frozen mid-run - see the P key handling below.
     GAME_PLAYER_DEATH, // Final life just lost - a short dramatic pause before GAME_OVER.
     GAME_OVER
 
 } GameState;
+
+// How long the game has spent paused so far, in total, folded in only
+// once a pause ends (see the P key handling below) - NOT updated while
+// a pause is still in progress. Every gameplay timer in this file is a
+// Uint32 timestamp compared against "now" via game_ticks() below
+// rather than raw SDL_GetTicks() - spawn delays, wave duration,
+// invulnerability, boss timers, popups, screen effects, all of it -
+// so pausing correctly freezes every one of them at once instead of
+// only skipping the frame-by-frame update loop while their underlying
+// timestamps keep quietly falling behind the wall clock. Without this,
+// resuming from a pause would make every "time since X" check see a
+// sudden jump equal to however long the game was paused, which reads
+// as a burst of enemies spawning all at once, a wave ending early, or
+// invulnerability/power-ups expiring instantly.
+static Uint32 game_paused_offset_ms = 0;
+
+// Whether a pause is currently in progress, and the frozen game_ticks()
+// value to keep returning for as long as it is. This pair exists
+// because game_paused_offset_ms above is only updated at the MOMENT a
+// pause ends - while the pause is still ongoing, SDL_GetTicks() keeps
+// climbing every real frame, so without freezing the return value
+// directly here, anything that calls game_ticks() outside the
+// GAME_PLAYING-gated update block (screen_effects_get_shake_offset()
+// and screen_effects_render_flash() below both run every frame
+// regardless of state) would keep seeing time pass - a shake or flash
+// would silently keep animating behind the "PAUSED" text.
+static int game_is_paused = 0;
+static Uint32 game_paused_at_tick = 0;
+
+// "Now", per every gameplay timer in this file - see
+// game_paused_offset_ms and game_is_paused above for why this exists
+// instead of calling SDL_GetTicks() directly. The one exception is the
+// frame-rate cap at the bottom of the main loop, which measures real
+// wall-clock frame duration and must not be shifted or frozen by this.
+static Uint32 game_ticks(void)
+{
+    if (game_is_paused)
+    {
+        return game_paused_at_tick;
+    }
+
+    return SDL_GetTicks() - game_paused_offset_ms;
+}
 
 // Resets every piece of gameplay state to a fresh run. This is the
 // one place both "start a new game from the title screen" and
@@ -73,7 +362,7 @@ typedef enum
 // list eventually do.
 //
 // current_time is passed in (rather than each system calling
-// SDL_GetTicks() itself) so every timer this touches - Wave 1's
+// game_ticks() itself) so every timer this touches - Wave 1's
 // announcement included - is anchored to the exact moment the run
 // actually begins. That matters: wave_init() used to only run once,
 // at program startup, so its "how long has this announcement been
@@ -173,6 +462,19 @@ int main(void)
         printf("Audio initialization failed.\n");
     }
 
+    // Start the title theme now, since game_state above already begins
+    // on GAME_TITLE - this is that state's one-time entry, not
+    // something the frame loop repeats. Both voices start together
+    // under one lock (see audio_music_start_dual()) so the melody and
+    // its accompaniment are sample-aligned from the very first
+    // callback, and playback_rate is reset to 1.0 as part of that same
+    // locked operation.
+    audio_music_start_dual(
+        &laser,
+        BLUE_DANUBE_MELODY, BLUE_DANUBE_MELODY_COUNT, 1,
+        BLUE_DANUBE_ACCOMPANIMENT, BLUE_DANUBE_ACCOMPANIMENT_COUNT, 1
+    );
+
     // Create the main game window.
     // SDL_CreateWindow() returns a pointer to the new window,
     // or NULL if the window could not be created.
@@ -259,12 +561,39 @@ int main(void)
     // so there's no stale-value risk from a previous run.
     Uint32 player_death_started_at = 0;
 
+    // When the current pause began (raw wall-clock time, not
+    // game_ticks() - this is the one timestamp that must NOT be offset
+    // by game_paused_offset_ms, since it's what that offset gets
+    // computed from on unpause). Only meaningful while
+    // game_state == GAME_PAUSED.
+    Uint32 pause_started_at = 0;
+
+    // Which Mountain King intensity tier the boss music is currently
+    // playing at (1/2/3, matching boss.phase exactly - see the
+    // BOSS_STATE_ACTIVE tier check below). Tracked separately from
+    // boss.phase itself so the music's playback-rate setter is only
+    // called on an actual tier CHANGE, not every frame - reset to 1
+    // whenever Mountain King (re)starts, alongside boss.phase's own
+    // reset to 1 in boss_init()/boss_spawn(), so a fresh encounter
+    // never begins mid-tier from a previous fight.
+    int boss_music_tier = 1;
+
     // Set at most once per run, at the GAME_PLAYER_DEATH -> GAME_OVER
     // handoff - never re-evaluated on later frames while GAME_OVER is
     // just sitting on screen. Read by the GAME_OVER render block to
     // decide whether to show "NEW HIGH SCORE!" instead of the normal
     // "HIGH SCORE <n>" line.
     int new_high_score = 0;
+
+    // True while GAME_OVER is waiting for the new-high-score fanfare
+    // to actually finish before starting the Funeral March (v0.8.0
+    // Phase 6B) - set only at the GAME_PLAYER_DEATH -> GAME_OVER
+    // handoff below when this run set a new record, and cleared
+    // either once audio_new_high_score_finished() reports true (the
+    // normal path) or by ENTER cancelling Game Over audio early. Never
+    // set when there's no fanfare to wait for, so the Funeral March
+    // starts immediately in that case instead.
+    int game_over_awaiting_fanfare = 0;
 
     // Create the enemy and enemy-bullet pools.
     Enemy enemies[MAX_ENEMIES];
@@ -298,7 +627,7 @@ int main(void)
     // Tracks wave progression - decides difficulty, existing systems
     // still do all the actual spawning/moving/rendering.
     WaveState wave;
-    wave_init(&wave, SDL_GetTicks());
+    wave_init(&wave, game_ticks());
 
     // The boss encounter - a single instance, since only one is ever
     // active at a time. Starts inactive; boss_spawn() is triggered
@@ -372,6 +701,44 @@ int main(void)
                 {
                     return_to_title_requested = 1;
                 }
+
+                // P toggles pause, but only while actually playing -
+                // pausing during the title screen, the death pause, or
+                // Game Over wouldn't mean anything (nothing is running
+                // to freeze), so it's deliberately a no-op there rather
+                // than a state jump to somewhere the rest of the game
+                // doesn't expect.
+                if (event.key.keysym.scancode == SDL_SCANCODE_P)
+                {
+                    if (game_state == GAME_PLAYING)
+                    {
+                        // Capture the frozen game_ticks() value BEFORE
+                        // flipping game_is_paused on, since game_ticks()
+                        // itself checks that flag - this has to read
+                        // the last real (unpaused) reading, not the
+                        // frozen one it's about to start returning.
+                        game_paused_at_tick = game_ticks();
+                        game_is_paused = 1;
+
+                        game_state = GAME_PAUSED;
+
+                        // Raw SDL_GetTicks(), not game_ticks() - see
+                        // pause_started_at's declaration above.
+                        pause_started_at = SDL_GetTicks();
+                    }
+                    else if (game_state == GAME_PAUSED)
+                    {
+                        // Fold however long this pause lasted into the
+                        // running offset so game_ticks() resumes from
+                        // exactly game_paused_at_tick with no jump, the
+                        // instant game_is_paused clears below.
+                        game_paused_offset_ms += SDL_GetTicks() - pause_started_at;
+                        game_is_paused = 0;
+
+                        game_state = GAME_PLAYING;
+                    }
+                }
+
             }
 
         }
@@ -393,7 +760,7 @@ int main(void)
             player_update(
                 &player,
                 keyboard,
-                SDL_GetTicks(),
+                game_ticks(),
                 player_min_y
             );
 
@@ -406,7 +773,15 @@ int main(void)
             if (player.lives <= 0)
             {
                 game_state = GAME_PLAYER_DEATH;
-                player_death_started_at = SDL_GetTicks();
+                player_death_started_at = game_ticks();
+
+                // Cut any boss music immediately as the run leaves
+                // active gameplay (v0.8.0 Phase 5B) - if this death
+                // happened mid-Dreadnought-fight, Mountain King must
+                // not keep playing through the death pause, GAME_OVER,
+                // and beyond. A no-op the rest of the time, since
+                // nothing plays during normal (non-boss) gameplay.
+                audio_music_stop(&laser);
 
                 // Wipe out any Scout projectiles still in flight.
                 enemy_bullets_init(enemy_bullets);
@@ -440,7 +815,7 @@ int main(void)
             if (keyboard[SDL_SCANCODE_SPACE] &&
                     !suppress_fire_until_space_released)
             {
-                Uint32 current_time = SDL_GetTicks();
+                Uint32 current_time = game_ticks();
 
                 // Rapid Fire simply swaps in a shorter cooldown for as
                 // long as it's active - bullets_fire() itself has no
@@ -492,7 +867,7 @@ int main(void)
                                      explosions,
                                      powerups,
                                      score_popups,
-                                     SDL_GetTicks()
+                                     game_ticks()
                                  );
             score += points_earned;
 
@@ -509,7 +884,7 @@ int main(void)
                                       explosions,
                                       powerups,
                                       &powerup_state,
-                                      SDL_GetTicks(),
+                                      game_ticks(),
                                       &player_rammed
                                   );
 
@@ -525,7 +900,7 @@ int main(void)
                     &screen_effects,
                     PLAYER_HIT_SHAKE_MAGNITUDE,
                     PLAYER_HIT_SHAKE_DURATION_MS,
-                    SDL_GetTicks()
+                    game_ticks()
                 );
             }
 
@@ -535,7 +910,7 @@ int main(void)
                                               asteroids,
                                               explosions,
                                               score_popups,
-                                              SDL_GetTicks()
+                                              game_ticks()
                                           );
             score += asteroid_points_earned;
 
@@ -548,7 +923,7 @@ int main(void)
             // of whether it was a normal shot, Rapid Fire, or one of
             // Spread Shot's three pellets, since they're all just
             // Bullets from the same pool.
-            collisions_bullets_boss(bullets, &boss, explosions, SDL_GetTicks());
+            collisions_bullets_boss(bullets, &boss, explosions, game_ticks());
 
             // Player ramming into asteroids.
             int player_hit_asteroid = 0;
@@ -557,7 +932,7 @@ int main(void)
                                         asteroids,
                                         explosions,
                                         &powerup_state,
-                                        SDL_GetTicks(),
+                                        game_ticks(),
                                         &player_hit_asteroid
                                     );
 
@@ -573,7 +948,7 @@ int main(void)
                     &screen_effects,
                     PLAYER_HIT_SHAKE_MAGNITUDE,
                     PLAYER_HIT_SHAKE_DURATION_MS,
-                    SDL_GetTicks()
+                    game_ticks()
                 );
             }
 
@@ -584,14 +959,14 @@ int main(void)
                         &boss,
                         explosions,
                         &powerup_state,
-                        SDL_GetTicks()))
+                        game_ticks()))
             {
                 audio_play_explosion(&laser);
                 screen_effects_shake(
                     &screen_effects,
                     PLAYER_HIT_SHAKE_MAGNITUDE,
                     PLAYER_HIT_SHAKE_DURATION_MS,
-                    SDL_GetTicks()
+                    game_ticks()
                 );
             }
 
@@ -601,18 +976,18 @@ int main(void)
                         enemy_bullets,
                         explosions,
                         &powerup_state,
-                        SDL_GetTicks()))
+                        game_ticks()))
             {
                 audio_play_explosion(&laser);
                 screen_effects_shake(
                     &screen_effects,
                     PLAYER_HIT_SHAKE_MAGNITUDE,
                     PLAYER_HIT_SHAKE_DURATION_MS,
-                    SDL_GetTicks()
+                    game_ticks()
                 );
             }
 
-            Uint32 current_time = SDL_GetTicks();
+            Uint32 current_time = game_ticks();
 
             // The Wave Director decides which threats are active and
             // how aggressively they spawn; the enemy/asteroid modules
@@ -666,7 +1041,7 @@ int main(void)
             int enemy_fire_result = enemies_fire(
                                          enemies,
                                          enemy_bullets,
-                                         SDL_GetTicks()
+                                         game_ticks()
                                      );
 
             if (enemy_fire_result & ENEMY_FIRED_BOLT)
@@ -681,7 +1056,7 @@ int main(void)
 
             // Boss weapon fire - reuses the same enemy bullet pool
             // and the Scout's laser sound, no new audio needed yet.
-            if (boss_fire(&boss, enemy_bullets, SDL_GetTicks()))
+            if (boss_fire(&boss, enemy_bullets, game_ticks()))
             {
                 audio_play_enemy_laser(&laser);
             }
@@ -709,13 +1084,13 @@ int main(void)
                         powerups,
                         &powerup_state,
                         explosions,
-                        SDL_GetTicks()) > 0)
+                        game_ticks()) > 0)
             {
                 audio_play_pickup(&laser);
             }
 
             // Expire any timed effects whose duration has elapsed.
-            powerup_state_update(&powerup_state, SDL_GetTicks());
+            powerup_state_update(&powerup_state, game_ticks());
 
             // Move the boss (entrance, then vertical bounce once in
             // combat), check phase transitions/defeat, and step
@@ -723,10 +1098,17 @@ int main(void)
             // inactive, so this is safe to call unconditionally -
             // only frozen because it's inside the GAME_PLAYING block,
             // same as every other system here.
-            int boss_events = boss_update(&boss, explosions, SDL_GetTicks());
+            int boss_events = boss_update(&boss, explosions, game_ticks());
 
             if (boss_events & BOSS_JUST_DEFEATED)
             {
+                // Cut Mountain King the instant the boss dies - do not
+                // wait for the 27.8s loop to finish, and no fade (none
+                // exists in this architecture). audio_music_stop()
+                // only silences music; it doesn't touch the SFX played
+                // just below for this same event.
+                audio_music_stop(&laser);
+
                 score += DREADNOUGHT_SCORE_VALUE;
 
                 // Bigger, longer-lived popup than an ordinary kill -
@@ -738,7 +1120,7 @@ int main(void)
                     boss.x + boss.width / 2.0f,
                     boss.y + boss.height / 2.0f,
                     DREADNOUGHT_SCORE_VALUE,
-                    SDL_GetTicks()
+                    game_ticks()
                 );
             }
 
@@ -758,23 +1140,80 @@ int main(void)
                     &screen_effects,
                     BOSS_DEFEATED_SHAKE_MAGNITUDE,
                     BOSS_DEFEATED_SHAKE_DURATION_MS,
-                    SDL_GetTicks()
+                    game_ticks()
                 );
             }
 
             // The warning sequence just finished and the boss actually
             // spawned - stop the klaxon now that it's served its
-            // purpose.
+            // purpose, and start the Dreadnought theme. BOSS_WARNING_ENDED
+            // fires exactly once per encounter (boss_update() only sets
+            // it on the single frame it advances WARNING -> ENTERING),
+            // so this is a one-shot start, not a per-frame trigger. It's
+            // deliberately not tied to the warning's own start (Blue
+            // Danube is already stopped well before this point, at the
+            // GAME_TITLE -> GAME_PLAYING transition, so there's nothing
+            // underneath to silence) - starting once the boss actually
+            // appears, rather than during the klaxon, avoids layering
+            // the waltz theme's start under the warning siren.
             if (boss_events & BOSS_WARNING_ENDED)
             {
                 audio_set_boss_warning(&laser, 0);
+
+                audio_music_start_dual(
+                    &laser,
+                    MOUNTAIN_KING_MELODY, MOUNTAIN_KING_MELODY_COUNT, 1,
+                    MOUNTAIN_KING_ACCOMPANIMENT, MOUNTAIN_KING_ACCOMPANIMENT_COUNT, 1
+                );
+
+                boss_music_tier = 1;
+            }
+
+            // Continuous HP-driven acceleration - boss.phase (1/2/3) is
+            // already the game's one authoritative GUNSHIP/BARRAGE/
+            // CRITICAL signal, computed from the exact same >66%/<=66%/
+            // <=33% health thresholds this phase wants, so this reuses
+            // it directly rather than tracking a second copy of the
+            // boss's health percentage. Only calls the playback-rate
+            // setter on an actual tier CHANGE (boss_music_tier differing
+            // from boss.phase), never every frame - and, critically,
+            // ONLY the rate setter: no start/restart function is called
+            // here, so the shared MusicState's note_index/phase/
+            // samples_into_note for both voices carry on completely
+            // undisturbed, exactly where the performance already was.
+            // boss.phase itself never regresses (see its own comment in
+            // boss.c - no healing mechanic exists in this game), so
+            // these tiers are naturally one-way as a consequence, not
+            // because this code enforces it. A single big hit that
+            // drops health from >66% straight past 33% still resolves
+            // correctly: boss.c's phase check cascades 1->2->3 across
+            // at most two consecutive frames (a fraction of a frame's
+            // difference, inaudible as a distinct intermediate tempo),
+            // and this code just mirrors whatever boss.phase says on
+            // each of those frames, landing on the correct final 1.30x.
+            if (boss.state == BOSS_STATE_ACTIVE && boss.phase != boss_music_tier)
+            {
+                boss_music_tier = boss.phase;
+
+                double mountain_king_rate = 1.00;
+
+                if (boss_music_tier == 2)
+                {
+                    mountain_king_rate = 1.15;
+                }
+                else if (boss_music_tier == 3)
+                {
+                    mountain_king_rate = 1.30;
+                }
+
+                audio_music_set_playback_rate(&laser, mountain_king_rate);
             }
 
             // Award extra lives for reaching score thresholds - checked
             // once per frame, after every source of score gain above
             // (enemy kills, asteroids, boss defeat) has had a chance to
             // run this frame, so nothing needs its own separate check.
-            if (player_check_extra_life(&player, score, SDL_GetTicks()) > 0)
+            if (player_check_extra_life(&player, score, game_ticks()) > 0)
             {
                 audio_play_extra_life(&laser);
             }
@@ -783,15 +1222,15 @@ int main(void)
             // to the Wave Director and fully reset the boss - ready
             // for a hypothetical future encounter, and back to
             // BOSS_STATE_INACTIVE so its overlays stop drawing.
-            if (boss_ready_for_wave_advance(&boss, SDL_GetTicks()))
+            if (boss_ready_for_wave_advance(&boss, game_ticks()))
             {
-                wave_advance_after_boss(&wave, SDL_GetTicks());
+                wave_advance_after_boss(&wave, game_ticks());
                 boss_init(&boss);
             }
 
             // Advance wave progression. Only ticks while playing, so
             // waves stay frozen during GAME_OVER like everything else.
-            wave_update(&wave, SDL_GetTicks());
+            wave_update(&wave, game_ticks());
 
             // TEMPORARY DEBUG: press B during a boss wave to skip
             // straight past the fight instead of playing it out - the
@@ -802,11 +1241,16 @@ int main(void)
             // explicitly stopped here too rather than assuming
             // BOSS_WARNING_ENDED already handled it - without leaving
             // a stale ENTERING/ACTIVE boss (or a stuck alarm) behind on
-            // the next (non-boss) wave. Remove before release.
+            // the next (non-boss) wave. Mountain King is stopped here
+            // too (v0.8.0 Phase 5B) for the same reason - skipping the
+            // fight this way never goes through BOSS_JUST_DEFEATED, so
+            // without this, the boss theme would otherwise keep looping
+            // straight into Wave 6. Remove before release.
             if (difficulty.boss_wave && keyboard[SDL_SCANCODE_B])
             {
                 audio_set_boss_warning(&laser, 0);
-                wave_advance_after_boss(&wave, SDL_GetTicks());
+                audio_music_stop(&laser);
+                wave_advance_after_boss(&wave, game_ticks());
                 boss_init(&boss);
             }
 
@@ -815,7 +1259,7 @@ int main(void)
             // testing the boss encounter. Remove before release.
             if (keyboard[SDL_SCANCODE_5])
             {
-                wave_debug_jump(&wave, 5, SDL_GetTicks());
+                wave_debug_jump(&wave, 5, game_ticks());
             }
 
         } // end GAME_PLAYING
@@ -831,7 +1275,7 @@ int main(void)
         // greater-than: matching the existing record isn't good enough
         // to count as beating it.
         if (game_state == GAME_PLAYER_DEATH &&
-                SDL_GetTicks() - player_death_started_at >= PLAYER_DEATH_DELAY_MS)
+                game_ticks() - player_death_started_at >= PLAYER_DEATH_DELAY_MS)
         {
             game_state = GAME_OVER;
 
@@ -842,7 +1286,51 @@ int main(void)
                 high_score = score;
                 highscore_save(high_score);
                 audio_play_new_high_score(&laser);
+
+                // The Funeral March must not start underneath the
+                // fanfare - wait for it to actually finish (checked
+                // below, every frame) rather than starting it here.
+                game_over_awaiting_fanfare = 1;
             }
+            else
+            {
+                // No fanfare to wait for - the Funeral March is this
+                // run's only Game Over audio, so it starts right away.
+                // One-shot (loop=0): bar 2 already repeats bar 1
+                // verbatim in the source, so looping this excerpt
+                // would make the repetition too obvious for what's
+                // meant to be a single Game Over cue (see Phase 6A/6B).
+                // audio_music_start_dual() resets the shared playback
+                // rate to 1.0 as part of this same locked call, so a
+                // boss-fight death can never leave Mountain King's
+                // 1.15x/1.30x rate active under the Funeral March.
+                audio_music_start_dual(
+                    &laser,
+                    FUNERAL_MARCH_MELODY, FUNERAL_MARCH_MELODY_COUNT, 0,
+                    FUNERAL_MARCH_ACCOMPANIMENT, FUNERAL_MARCH_ACCOMPANIMENT_COUNT, 0
+                );
+            }
+        }
+
+        // The fanfare finished naturally (not cancelled - ENTER's
+        // handling below clears game_over_awaiting_fanfare itself, so
+        // this can't also fire after that) - start the Funeral March
+        // exactly once, the moment it's actually safe to, rather than
+        // guessing at the fanfare's duration. Checked every frame
+        // while GAME_OVER is waiting, but the flag itself is only ever
+        // set once per run (immediately above) and cleared the first
+        // time this fires, so audio_music_start_dual() below runs at
+        // most once per Game Over screen.
+        if (game_over_awaiting_fanfare &&
+                audio_new_high_score_finished(&laser))
+        {
+            game_over_awaiting_fanfare = 0;
+
+            audio_music_start_dual(
+                &laser,
+                FUNERAL_MARCH_MELODY, FUNERAL_MARCH_MELODY_COUNT, 0,
+                FUNERAL_MARCH_ACCOMPANIMENT, FUNERAL_MARCH_ACCOMPANIMENT_COUNT, 0
+            );
         }
 
         // Leave GAME_OVER back to the title screen - the arcade flow
@@ -860,6 +1348,33 @@ int main(void)
         {
             game_state = GAME_TITLE;
             screen_effects_init(&screen_effects);
+
+            // Cancel every Game Over audio possibility at once (v0.8.0
+            // Phase 6B) - whichever of these was actually true this
+            // frame, ENTER must cut it cleanly: the fanfare still
+            // playing, the Funeral March still playing, or the
+            // Funeral March merely pending behind a fanfare that
+            // hadn't finished yet. audio_music_stop() and
+            // audio_stop_new_high_score() are two independent
+            // subsystems (music voices vs. the fanfare's own fields),
+            // so both are needed - stopping one never stops the other.
+            audio_music_stop(&laser);
+            audio_stop_new_high_score(&laser);
+            game_over_awaiting_fanfare = 0;
+
+            // Restart both title-theme voices together from the
+            // beginning, sample-aligned, with the rate forced back to
+            // 1.0 - a boss fight's tempo increase (see the Phase 2.5
+            // playback-rate work) must never leak into the title
+            // screen. audio_music_start_dual() clears both voices'
+            // prior state (note index, phase, sample position) as part
+            // of restarting them, so the four-beat accompaniment
+            // silence plays again exactly as it did on first launch.
+            audio_music_start_dual(
+                &laser,
+                BLUE_DANUBE_MELODY, BLUE_DANUBE_MELODY_COUNT, 1,
+                BLUE_DANUBE_ACCOMPANIMENT, BLUE_DANUBE_ACCOMPANIMENT_COUNT, 1
+            );
         }
 
         // Leave the title screen. Deliberately placed after the
@@ -873,6 +1388,14 @@ int main(void)
         // press stays down.
         if (start_game_requested)
         {
+            // Cut the title theme the instant gameplay begins - no
+            // Blue Danube (melody or accompaniment) under gameplay,
+            // and no fade-out in this phase. audio_music_stop() calls
+            // music_stop_all(), which loops over every voice, so both
+            // are silenced together. This only silences music; the SFX
+            // mixing path in audio_callback() is untouched.
+            audio_music_stop(&laser);
+
             game_start_new(
                 &player,
                 bullets,
@@ -892,7 +1415,7 @@ int main(void)
                 &screen_effects,
                 score_popups,
                 &laser,
-                SDL_GetTicks()
+                game_ticks()
             );
 
             game_state = GAME_PLAYING;
@@ -905,7 +1428,7 @@ int main(void)
         explosions_update(explosions);
 
         // Same idea for score popups already in flight.
-        popups_update(score_popups, SDL_GetTicks());
+        popups_update(score_popups, game_ticks());
 
         // Set the drawing color to opaque black.
         // The four values represent Red, Green, Blue, and Alpha.
@@ -931,7 +1454,7 @@ int main(void)
 
         screen_effects_get_shake_offset(
             &screen_effects,
-            SDL_GetTicks(),
+            game_ticks(),
             &shake_x,
             &shake_y
         );
@@ -1053,9 +1576,9 @@ int main(void)
                 POWERUP_HUD_Y,
                 powerup_letter(POWERUP_RAPID_FIRE),
                 rapid_r, rapid_g, rapid_b,
-                powerup_time_remaining(powerup_state.rapid_fire_until, SDL_GetTicks()),
+                powerup_time_remaining(powerup_state.rapid_fire_until, game_ticks()),
                 RAPID_FIRE_DURATION,
-                SDL_GetTicks()
+                game_ticks()
             );
         }
 
@@ -1072,9 +1595,9 @@ int main(void)
                 POWERUP_HUD_Y,
                 powerup_letter(POWERUP_SPREAD_SHOT),
                 spread_r, spread_g, spread_b,
-                powerup_time_remaining(powerup_state.spread_shot_until, SDL_GetTicks()),
+                powerup_time_remaining(powerup_state.spread_shot_until, game_ticks()),
                 SPREAD_SHOT_DURATION,
-                SDL_GetTicks()
+                game_ticks()
             );
         }
 
@@ -1135,7 +1658,7 @@ int main(void)
 
         // Floating "+value" score popups, drawn on top of explosions
         // so a popup is never hidden behind the burst it came from.
-        popups_render(renderer, score_popups, SDL_GetTicks());
+        popups_render(renderer, score_popups, game_ticks());
 
         // Boss health bar overlay - drawn on top of gameplay like the
         // wave announcement, not part of the permanently reserved HUD
@@ -1159,17 +1682,37 @@ int main(void)
         } // end "not GAME_TITLE" gameplay presentation block
 
         // Wave announcement overlay - drawn on top of gameplay, not
-        // a separate frozen state. Gated to GAME_PLAYING since
-        // wave_update() (which clears announcement_active) doesn't
-        // run during GAME_OVER either. Also suppressed during
-        // BOSS_STATE_WARNING - both this and boss_render_warning()
-        // start at the same instant Wave 5 begins and run for the
-        // same ~1.8s, so showing both at once would just overlap into
-        // unreadable text; the boss-specific warning is the more
-        // dramatic and more specific of the two, so it wins.
-        if (game_state == GAME_PLAYING && boss.state != BOSS_STATE_WARNING)
+        // a separate frozen state. Gated to GAME_PLAYING/GAME_PAUSED
+        // since wave_update() (which clears announcement_active)
+        // doesn't run during GAME_OVER either - GAME_PAUSED is
+        // included here (unlike most GAME_PLAYING-only gameplay logic)
+        // so an announcement that was on screen when the player paused
+        // stays visible instead of blinking out and back in around the
+        // pause. Also suppressed during BOSS_STATE_WARNING - both this
+        // and boss_render_warning() start at the same instant Wave 5
+        // begins and run for the same ~1.8s, so showing both at once
+        // would just overlap into unreadable text; the boss-specific
+        // warning is the more dramatic and more specific of the two,
+        // so it wins.
+        if ((game_state == GAME_PLAYING || game_state == GAME_PAUSED) &&
+                boss.state != BOSS_STATE_WARNING)
         {
             wave_render_announcement(renderer, &wave);
+        }
+
+        // PAUSED overlay - drawn on top of the frozen battlefield the
+        // same way GAME_OVER's text is, so it's obvious the game has
+        // stopped responding to gameplay input on purpose rather than
+        // hung.
+        if (game_state == GAME_PAUSED)
+        {
+            SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+
+            const char *paused_title = "PAUSED";
+            int paused_scale = 2;
+            int paused_x =
+                (SCREEN_WIDTH - text_width(paused_title, paused_scale)) / 2;
+            text_draw(renderer, paused_title, paused_x, 50, paused_scale);
         }
 
         if (game_state == GAME_OVER)
@@ -1237,7 +1780,7 @@ int main(void)
         // Full-screen flash overlay, if one is active - drawn last so
         // it tints everything else already on screen this frame. A
         // no-op the rest of the time.
-        screen_effects_render_flash(renderer, &screen_effects, SDL_GetTicks());
+        screen_effects_render_flash(renderer, &screen_effects, game_ticks());
 
         // Display the completed frame in the window.
         SDL_RenderPresent(renderer);

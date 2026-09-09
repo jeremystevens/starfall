@@ -18,7 +18,7 @@ else
 endif
 
 # List all your source code C files here
-SRCS = main.c src/bullet.c src/player.c src/starfield.c src/audio.c src/enemy.c src/collision.c src/enemy_bullet.c src/explosion.c src/text.c src/asteroid.c src/powerup.c src/wave.c src/boss.c src/highscore.c src/screen_effects.c src/popup.c
+SRCS = main.c src/bullet.c src/player.c src/starfield.c src/audio.c src/music.c src/enemy.c src/collision.c src/enemy_bullet.c src/explosion.c src/text.c src/asteroid.c src/powerup.c src/wave.c src/boss.c src/highscore.c src/screen_effects.c src/popup.c
 
 # Code::Blocks Target Catchers
 # These alias rules map Code::Blocks explicit target commands to our main compilation recipe

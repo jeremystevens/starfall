@@ -49,6 +49,7 @@
 		<Unit filename="include/explosion.h" />
 		<Unit filename="include/game_config.h" />
 		<Unit filename="include/highscore.h" />
+		<Unit filename="include/music.h" />
 		<Unit filename="include/player.h" />
 		<Unit filename="include/popup.h" />
 		<Unit filename="include/powerup.h" />
@@ -84,6 +85,9 @@
 			<Option compilerVar="CC" />
 		</Unit>
 		<Unit filename="src/highscore.c">
+			<Option compilerVar="CC" />
+		</Unit>
+		<Unit filename="src/music.c">
 			<Option compilerVar="CC" />
 		</Unit>
 		<Unit filename="src/player.c">
