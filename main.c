@@ -479,7 +479,7 @@ int main(void)
     // SDL_CreateWindow() returns a pointer to the new window,
     // or NULL if the window could not be created.
     SDL_Window *window = SDL_CreateWindow(
-                             "Space Shooter",
+                             "Starfall",
                              SDL_WINDOWPOS_CENTERED,
                              SDL_WINDOWPOS_CENTERED,
                              640,
@@ -1474,7 +1474,7 @@ int main(void)
         {
             SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
 
-            const char *title = "SPACE SHOOTER";
+            const char *title = "starfall";
             int title_scale = 2;
             int title_x = (SCREEN_WIDTH - text_width(title, title_scale)) / 2;
             text_draw(renderer, title, title_x, 16, title_scale);
