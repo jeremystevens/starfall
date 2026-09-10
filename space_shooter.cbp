@@ -54,6 +54,7 @@
 		<Unit filename="include/popup.h" />
 		<Unit filename="include/powerup.h" />
 		<Unit filename="include/screen_effects.h" />
+		<Unit filename="include/soundtrack.h" />
 		<Unit filename="include/starfield.h" />
 		<Unit filename="include/text.h" />
 		<Unit filename="include/wave.h" />
@@ -100,6 +101,9 @@
 			<Option compilerVar="CC" />
 		</Unit>
 		<Unit filename="src/screen_effects.c">
+			<Option compilerVar="CC" />
+		</Unit>
+		<Unit filename="src/soundtrack.c">
 			<Option compilerVar="CC" />
 		</Unit>
 		<Unit filename="src/starfield.c">

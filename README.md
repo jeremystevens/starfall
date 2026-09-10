@@ -89,6 +89,9 @@ and linking.
 | Extra life on-screen notification | ✅ |
 | Dreadnought progressive damage effects | ✅ |
 | Dramatic final-death pause before Game Over | ✅ |
+| Procedural title/boss/Game Over soundtrack | ✅ |
+| Adaptive boss-theme tempo (three intensity tiers) | ✅ |
+| Pause (P), freezing every gameplay timer | ✅ |
 
 > **Active development:** the game is a working prototype while systems
 > from the original are ported and expanded.
@@ -148,6 +151,59 @@ happy path - so it could never loop forever into a run where it no
 longer belonged.
 
 No laser WAV required.
+
+------------------------------------------------------------------------
+
+## Procedural Soundtrack
+
+Beyond one-shot sound effects, STARFALL now plays three full musical
+compositions — a title theme, a boss theme, and a Game Over theme — none
+of them loaded from an audio file. Every note is sequenced sample by
+sample by a small generic engine (`music.h`/`music.c`) and mixed into
+the exact same SDL audio callback as every laser and explosion.
+
+**A generic sequencer, not three hardcoded songs:** `music.c` only knows
+how to step a fixed number of independent voices through whatever note
+data (frequency + duration, in samples) it's handed, looping if asked,
+scaled by a shared playback rate — it has no idea what a "title screen"
+or "boss fight" is. The actual compositions and the decision of *what*
+plays *when* live in a separate module, `soundtrack.h`/`soundtrack.c`,
+which exposes a small intent-level API — `soundtrack_play_title()`,
+`soundtrack_play_boss()`, `soundtrack_set_boss_intensity()`,
+`soundtrack_play_game_over()`, `soundtrack_stop()` — so `main.c` never
+touches a raw note array or a voice index; it just says *which* theme
+should be playing right now.
+
+**The three themes:**
+
+| Theme | Source | Plays during |
+| --- | --- | --- |
+| Title | Johann Strauss II, *The Blue Danube* (Mutopia Project arrangement, CC BY-SA 4.0) | `GAME_TITLE`, looping |
+| Boss | Edvard Grieg, *In the Hall of the Mountain King* (Mutopia Project, public domain) | The Dreadnought fight, looping |
+| Game Over | Frédéric Chopin, *Marche funèbre* | Once, after death |
+
+Each theme is two independently-verified voices (a melody plus an
+accompaniment part), transcribed note-by-note from public-domain
+sources and started together under one locked operation so both voices
+stay sample-aligned from their very first callback.
+
+**Adaptive boss tempo:** the Dreadnought fight reuses the same
+GUNSHIP/BARRAGE/CRITICAL health-percentage thresholds that already drive
+the boss's move speed and fire rate (see Boss Encounters) to also drive
+the music: the boss theme speeds up from 1.00x to 1.15x to 1.30x as the
+fight escalates. Only the playback rate changes on a tier shift — the
+melody and accompaniment are never restarted or reset, so the
+performance simply continues faster from wherever it already was,
+staying perfectly in sync with itself.
+
+**Sequencing, not overlap:** the title theme cuts out the instant
+gameplay starts and restarts from the beginning (sample-aligned, back to
+normal speed) the moment a run returns to the title screen. The boss
+theme is silenced immediately on defeat, on a mid-fight player death, or
+via the debug boss-skip key — it never keeps looping into a wave it no
+longer belongs to. The Game Over theme is deliberately sequenced to wait
+for the new-high-score fanfare (see Persistent High Score) to finish
+playing before it starts, so the two are never heard at once.
 
 ------------------------------------------------------------------------
 
@@ -415,6 +471,14 @@ re-roll their spawn Y position (up to a few attempts) if it lands too
 close to another of the same type already on screen, so two that spawn
 back-to-back read as two separate threats instead of a stacked blob
 riding together.
+
+**Wave 3/4 rebalance:** Wave 3 originally introduced Bombers *and*
+slashed the Scout/asteroid spawn delays most of the way to their Wave 4
+values in the same step — stacking a brand-new enemy type on top of the
+single biggest spawn-rate jump in the whole progression, which made it
+the wall most runs actually died on. Wave 3's delays were eased back so
+Bombers arrive against an already-survivable baseline; Wave 4 now
+absorbs more of that ramp instead.
 
 ------------------------------------------------------------------------
 
@@ -733,6 +797,7 @@ starfield keeps moving.
 | Arrow keys | Move the ship |
 | SPACE | Hold to fire during gameplay · press to start a new game from the title screen |
 | ENTER | Return to the title screen from Game Over |
+| P | Pause / resume during gameplay |
 
 **Starting a game without a same-press double-fire:** leaving the title
 screen is driven by a discrete `SDL_KEYDOWN` event (filtered to ignore
@@ -833,6 +898,33 @@ ever runs - there's nothing left to defer within a single frame.
 
 ------------------------------------------------------------------------
 
+## Pause
+
+Pressing **P** during `GAME_PLAYING` freezes the run in a new
+`GAME_PAUSED` state, with a "PAUSED" overlay drawn over the frozen
+battlefield the same way Game Over's text sits over it. Pressing P again
+resumes exactly where the run left off.
+
+**One offset, every timer frozen at once:** rather than pausing each
+system individually, every gameplay timer in `main.c` — spawn delays,
+wave duration, invulnerability, boss timers, popups, screen effects, all
+of it — already reads "now" through a single `game_ticks()` function
+instead of calling `SDL_GetTicks()` directly. While paused, `game_ticks()`
+simply returns the frozen instant pausing began; on resume, however long
+the pause lasted is folded into a running offset so every timer picks up
+again from exactly where it stopped, with no sudden jump. Without this,
+resuming would make every "time since X" check see a burst equal to the
+pause's real-world duration — read as enemies spawning all at once, a
+wave ending early, or a power-up expiring instantly.
+
+Screen shake and flash are the one deliberate exception: they already
+run every frame regardless of game state (so a hit's shake can finish
+animating even into Game Over), so pausing freezes their *effective*
+input via the same `game_ticks()` call rather than needing a separate
+pause check of their own.
+
+------------------------------------------------------------------------
+
 ## Persistent High Score
 
 A dedicated module (`highscore.h`/`highscore.c`) owns all save-file I/O
@@ -917,10 +1009,12 @@ starfall/
 │   ├── explosion.h
 │   ├── game_config.h
 │   ├── highscore.h
+│   ├── music.h
 │   ├── player.h
 │   ├── popup.h
 │   ├── powerup.h
 │   ├── screen_effects.h
+│   ├── soundtrack.h
 │   ├── starfield.h
 │   ├── text.h
 │   └── wave.h
@@ -935,10 +1029,12 @@ starfall/
 │   ├── enemy_bullet.c
 │   ├── explosion.c
 │   ├── highscore.c
+│   ├── music.c
 │   ├── player.c
 │   ├── popup.c
 │   ├── powerup.c
 │   ├── screen_effects.c
+│   ├── soundtrack.c
 │   ├── starfield.c
 │   ├── text.c
 │   └── wave.c
@@ -963,6 +1059,8 @@ starfall/
 | `popup.c` | Floating "+value" score popup pool - visualizes score already awarded elsewhere, never awards it itself |
 | `collision.c` | Cross-system collision handling, score results, hit-flash timers & spawning destruction effects |
 | `audio.c` | SDL2 audio device, procedural weapon/explosion/fanfare/klaxon synthesis & sound mixing |
+| `music.c` | Generic multi-voice music sequencer - voice/note advancement, sample-accurate looping & playback-rate scaling, no game-specific knowledge |
+| `soundtrack.c` | STARFALL's own compositions (title/boss/Game Over themes) & the intent-level API `main.c` calls to trigger them |
 | `text.c` | Custom scalable 5×7 bitmap text renderer (A–Z, 0–9) & string-width measurement |
 | `wave.c` | The Wave Director - wave timing, hand-tuned/formula-scaled difficulty, spawn-jitter floors, and the wave announcement overlay |
 | `game_config.h` | Shared screen, HUD & gameplay-area dimensions |
@@ -1363,6 +1461,42 @@ how those same systems work at a lower level.
     allocation anywhere in the project, every new pool/timer field
     traced to an init path, `-Wall -Wextra -Wpedantic` clean
 
+### Procedural Soundtrack & Pause (v0.8.0)
+
+-   [x] Generic reusable multi-voice music sequencer (`music.h`/
+    `music.c`) - voices, note advancement, sample-accurate looping &
+    playback-rate scaling, with no idea what a "title screen" or "boss
+    fight" is
+-   [x] Three fully-transcribed public-domain compositions: the Blue
+    Danube Waltz (title theme), In the Hall of the Mountain King (boss
+    theme), and Chopin's Marche funèbre (Game Over theme)
+-   [x] Title theme loops on `GAME_TITLE`, stops instantly the moment
+    gameplay starts, and restarts sample-aligned at normal speed on
+    every return to the title screen
+-   [x] Boss theme starts once at `BOSS_WARNING_ENDED` and accelerates
+    through three intensity tiers (1.00x/1.15x/1.30x) tied to the
+    existing GUNSHIP/BARRAGE/CRITICAL phase thresholds, without ever
+    restarting or desyncing its two voices
+-   [x] Boss theme stopped immediately on defeat, on a mid-fight player
+    death, and via the debug boss-skip key
+-   [x] Game Over theme sequenced to wait for the new-high-score
+    fanfare to finish before starting, so the two are never heard
+    overlapping
+-   [x] `GAME_PAUSED` state (P key), freezing every gameplay timer
+    through a single `game_ticks()` offset - including screen shake and
+    flash, which run outside the normal gameplay-update gate
+-   [x] Wave 3/4 difficulty rebalance - Wave 3's spawn-rate jump eased
+    so introducing Bombers no longer coincides with the steepest ramp
+    in the whole progression
+-   [x] Soundtrack module refactor: composition data and an
+    intent-level API (`soundtrack_play_title()`, `soundtrack_play_boss()`,
+    `soundtrack_set_boss_intensity()`, `soundtrack_play_game_over()`,
+    `soundtrack_stop()`) extracted from `main.c` into dedicated
+    `soundtrack.h`/`soundtrack.c` - `main.c` no longer contains any raw
+    composition note arrays
+-   [x] Verified via a normal build and a strict
+    `-Wall -Wextra -Wpedantic` build, both clean
+
 ### Future
 
 -   [ ] Further enemy variety beyond Scouts and Bombers
@@ -1389,6 +1523,10 @@ how those same systems work at a lower level.
     added yet - starting conservative so shake still reads as
     meaningful)
 -   [ ] Further graphics polish
+-   [ ] Fades/crossfades between soundtrack tracks (deliberately excluded
+    from the v0.8.0 soundtrack work - every transition is currently an
+    instant cut)
+-   [ ] Additional soundtrack tracks (e.g. per-wave ambient themes)
 
 ------------------------------------------------------------------------
 
