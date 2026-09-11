@@ -4,7 +4,7 @@ ifeq ($(OS),Windows_NT)
     CC = gcc
     CFLAGS = -Iinclude -IC:/mingw64/include
     LDFLAGS = -Linclude -LC:/mingw64/lib -lmingw32 -lSDL2main -lSDL2 -lm
-    TARGET = bin/Debug/space_shooter.exe
+    TARGET = bin/Debug/starfall.exe
     RM = del /Q
     MKDIR = if not exist bin\Debug mkdir bin\Debug
 else
@@ -12,7 +12,7 @@ else
     CC = gcc
     CFLAGS = -Iinclude `sdl2-config --cflags`
     LDFLAGS = `sdl2-config --libs` -lm
-    TARGET = bin/Debug/space_shooter
+    TARGET = bin/Debug/starfall
     RM = rm -f
     MKDIR = mkdir -p bin/Debug
 endif
