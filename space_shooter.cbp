@@ -2,12 +2,12 @@
 <CodeBlocks_project_file>
 	<FileVersion major="1" minor="6" />
 	<Project>
-		<Option title="space_shooter" />
+		<Option title="starfall" />
 		<Option pch_mode="2" />
 		<Option compiler="gcc" />
 		<Build>
 			<Target title="Debug">
-				<Option output="bin/Debug/space_shooter" prefix_auto="1" extension_auto="1" />
+				<Option output="bin/Debug/starfall" prefix_auto="1" extension_auto="1" />
 				<Option object_output="obj/Debug/" />
 				<Option type="1" />
 				<Option compiler="gcc" />
@@ -20,7 +20,7 @@
 				</Linker>
 			</Target>
 			<Target title="Release">
-				<Option output="bin/Release/space_shooter" prefix_auto="1" extension_auto="1" />
+				<Option output="bin/Release/starfall" prefix_auto="1" extension_auto="1" />
 				<Option object_output="obj/Release/" />
 				<Option type="1" />
 				<Option compiler="gcc" />
@@ -48,6 +48,7 @@
 		<Unit filename="include/enemy_bullet.h" />
 		<Unit filename="include/explosion.h" />
 		<Unit filename="include/game_config.h" />
+		<Unit filename="include/game_render.h" />
 		<Unit filename="include/highscore.h" />
 		<Unit filename="include/music.h" />
 		<Unit filename="include/player.h" />
@@ -83,6 +84,9 @@
 			<Option compilerVar="CC" />
 		</Unit>
 		<Unit filename="src/explosion.c">
+			<Option compilerVar="CC" />
+		</Unit>
+		<Unit filename="src/game_render.c">
 			<Option compilerVar="CC" />
 		</Unit>
 		<Unit filename="src/highscore.c">

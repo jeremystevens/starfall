@@ -995,6 +995,15 @@ The project began as a single `main.c` approaching **600 lines**. As
 systems became functional, they were extracted into dedicated modules.
 `main.c` is now primarily the game's orchestrator.
 
+An eight-phase, behavior-preserving refactoring pass (v0.8.0) later
+went through `main.c` specifically to make that orchestrator role
+explicit: presentation moved into `game_render.c`, the scattered
+run/state-machine bookkeeping consolidated into one `GameRuntime`
+struct, input handling and state transitions became named functions,
+and the entire `GAME_PLAYING` per-frame update became seven ordered,
+semantically-named stages instead of one long inline block. See Main.c
+Code-Quality Refactor in the roadmap below for the full phase list.
+
 ``` text
 starfall/
 │
@@ -1008,6 +1017,7 @@ starfall/
 │   ├── enemy_bullet.h
 │   ├── explosion.h
 │   ├── game_config.h
+│   ├── game_render.h
 │   ├── highscore.h
 │   ├── music.h
 │   ├── player.h
@@ -1028,6 +1038,7 @@ starfall/
 │   ├── enemy.c
 │   ├── enemy_bullet.c
 │   ├── explosion.c
+│   ├── game_render.c
 │   ├── highscore.c
 │   ├── music.c
 │   ├── player.c
@@ -1061,6 +1072,7 @@ starfall/
 | `audio.c` | SDL2 audio device, procedural weapon/explosion/fanfare/klaxon synthesis & sound mixing |
 | `music.c` | Generic multi-voice music sequencer - voice/note advancement, sample-accurate looping & playback-rate scaling, no game-specific knowledge |
 | `soundtrack.c` | STARFALL's own compositions (title/boss/Game Over themes) & the intent-level API `main.c` calls to trigger them |
+| `game_render.c` | Renders one complete frame (title, HUD, entities, overlays) from a read-only `RenderContext` - presentation only, never mutates gameplay state, awards score, or starts audio |
 | `text.c` | Custom scalable 5×7 bitmap text renderer (A–Z, 0–9) & string-width measurement |
 | `wave.c` | The Wave Director - wave timing, hand-tuned/formula-scaled difficulty, spawn-jitter floors, and the wave announcement overlay |
 | `game_config.h` | Shared screen, HUD & gameplay-area dimensions |
@@ -1496,6 +1508,65 @@ how those same systems work at a lower level.
     composition note arrays
 -   [x] Verified via a normal build and a strict
     `-Wall -Wextra -Wpedantic` build, both clean
+
+### Main.c Code-Quality Refactor (v0.8.0)
+
+An eight-phase, behavior-preserving refactoring pass through `main.c` -
+no gameplay, timing, collision, spawning, scoring, boss, power-up,
+control, pause, or soundtrack behavior changed at any point; every
+phase had its own compile-and-playtest checkpoint before the next one
+began.
+
+-   [x] Phase 1 - baseline audit: recorded the pre-refactor line count
+    (1,525) and build results, classified every raw `SDL_GetTicks()`
+    call, and fixed a real bug found along the way - `audio_shutdown()`
+    was missing from three of four program-exit paths (including
+    normal shutdown)
+-   [x] Phase 2 - all rendering (title screen, HUD, every entity pool,
+    every overlay) extracted into `game_render.c`/`game_render.h`
+    behind a single `game_render_frame()` entry point and a read-only
+    `RenderContext`, with draw order provably unchanged
+-   [x] Phase 3 - the run/state-machine bookkeeping that used to be
+    scattered across file-scope statics and loose `main()` locals
+    (pause tracking, death timing, fire suppression, boss music tier,
+    high-score/fanfare flags, score) consolidated into one explicitly-
+    initialized `GameRuntime` struct - deliberately not a "God struct":
+    entity pools and per-subsystem spawn timers stayed outside it
+-   [x] Phase 4 - SDL event polling, the pause toggle, and the
+    `GAME_OVER -> GAME_TITLE`/`GAME_TITLE -> GAME_PLAYING` transitions
+    extracted into named functions, so every legal state transition is
+    easy to find and trace to the key that causes it
+-   [x] Phase 5 - the entire `GAME_PLAYING` per-frame update split into
+    seven ordered, semantically-named stages (player movement/death,
+    firing, projectiles & collisions, threat spawning, power-ups, boss
+    events & extra life, wave progression & debug controls) with the
+    original update order preserved exactly
+-   [x] Phase 6 - duplication cleanup: the repeated "explosion SFX +
+    standard shake" player-damage response consolidated behind one
+    helper, a `draw_centered_text()` helper replaced eleven duplicated
+    centering calculations in `game_render.c`, and every stage
+    function's repeated `game_ticks()` calls collapsed to one
+    `now` snapshot per frame/stage
+-   [x] Phase 7 - release-hygiene audit: fixed a missing `fclose()`
+    error check in `highscore_save()`, removed two now-unused includes
+    from `main.c`, corrected stale `space_shooter` branding in
+    `space_shooter.cbp`'s project title and build output paths (now
+    `starfall`, matching the Makefile), and ran a one-off
+    AddressSanitizer/UndefinedBehaviorSanitizer build (clean - the only
+    finding was an SDL-internal allocation, not attributable to this
+    project's code)
+-   [x] Phase 8 - final architecture review confirming `GameRuntime`
+    stayed focused, rendering stayed isolated in `game_render`,
+    soundtrack responsibilities stayed in `soundtrack`, and `main()`
+    reads as orchestration rather than implementation detail; one
+    stale comment corrected
+-   [x] The `B` boss-skip and `5` Wave-5-jump development shortcuts
+    preserved, untouched, through all eight phases - by explicit
+    decision, not oversight
+-   [x] `main.c`: 1,525 -> 1,602 lines - a slight increase, not a
+    reduction, since responsibility moved out (`game_render.c`,
+    `soundtrack.c`) rather than being deleted; every phase treated line
+    count as information, never a target
 
 ### Future
 

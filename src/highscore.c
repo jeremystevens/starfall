@@ -82,7 +82,16 @@ int highscore_save(int score)
 
     fprintf(file, "%d\n", score);
 
-    fclose(file);
+    // fclose() can still fail here (e.g. a full disk) even though
+    // fopen() and fprintf() above succeeded - buffered data isn't
+    // guaranteed to have actually reached the file until the close
+    // succeeds. Without this check, a failed save would be silently
+    // reported as successful.
+    if (fclose(file) != 0)
+    {
+        fprintf(stderr, "Warning: could not save high score.\n");
+        return 0;
+    }
 
     return 1;
 }
