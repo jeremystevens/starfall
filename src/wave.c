@@ -265,12 +265,13 @@ void wave_advance_after_boss(WaveState *wave, Uint32 current_time)
     begin_wave(wave, current_time);
 }
 
-// TEMPORARY DEBUG: jump straight to target_wave, skipping everything
-// before it. Purely for fast iteration while testing later waves (the
-// boss especially) without replaying the whole progression every
-// time. Reuses begin_wave() so the jump behaves exactly like a real
-// transition - same announcement, same console log. Not part of any
-// real gameplay path; remove before release.
+// Jump straight to target_wave, skipping everything before it - the
+// v0.9.0 Developer Toolkit's Navigation actions and the legacy B/5
+// hotkeys (now routed through that same architecture; see
+// dev_jump_to_wave() in main.c) are its only callers. Reuses
+// begin_wave() so the jump behaves exactly like a real transition -
+// same announcement, same console log. Not part of any real gameplay
+// path.
 void wave_debug_jump(WaveState *wave, int target_wave, Uint32 current_time)
 {
     wave->current_wave = target_wave - 1;

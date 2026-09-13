@@ -15,6 +15,7 @@
 #include "popup.h"
 #include "wave.h"
 #include "screen_effects.h"
+#include "dev_tools.h"
 
 // The states the game can be in. Declared here, not in main.c, since
 // this module has to branch on it to decide what a given frame should
@@ -53,10 +54,18 @@ typedef struct
     const PowerUpState *powerup_state;
     const WaveState *wave;
     const ScreenEffects *screen_effects;
+    const DevTools *dev_tools;
 
     int score;
     int high_score;
     int new_high_score;
+
+    // Diagnostics-overlay-only inputs (see DevTools.show_stats). Not
+    // otherwise part of gameplay state, so they don't belong on any of
+    // the entity/world pointers above; kept as two plain values here
+    // rather than duplicating a counter that already lives elsewhere.
+    int fps;
+    int boss_music_tier;
 
     // A single "now" snapshot for the whole frame, taken once by
     // main.c (via its pause-aware game_ticks()) immediately before

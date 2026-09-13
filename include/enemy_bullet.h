@@ -34,6 +34,15 @@ typedef struct
 // Initialize the enemy bullet pool.
 void enemy_bullets_init(EnemyBullet bullets[]);
 
+// The collision rectangle for one enemy projectile - a 2x1 bolt, or a
+// 3x3 bomb (inset by 1px on each axis, since bombs are drawn bigger
+// than bolts and need a matching hitbox), depending on type.
+// EnemyBullet carries no width/height of its own, so this was
+// previously duplicated as a literal directly in collision.c; now
+// both collision.c and the v0.9.0 Developer Toolkit's hitbox overlay
+// share this single definition instead.
+SDL_Rect enemy_bullet_hitbox_rect(const EnemyBullet *bullet);
+
 // Fire a Scout's laser bolt from an enemy position. Travels straight
 // toward the left edge of the screen.
 int enemy_bullets_fire(

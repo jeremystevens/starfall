@@ -925,6 +925,117 @@ pause check of their own.
 
 ------------------------------------------------------------------------
 
+## Developer Toolkit (v0.9.0)
+
+An in-game developer/debug panel for testing waves, the boss fight,
+power-ups, and diagnostics without replaying a run from scratch. It
+exists **only in development builds** - a release build is compiled
+with no developer controls, no developer state, and no way to reach
+either, at all.
+
+**This is a development/testing tool, separate from normal player
+controls.** Nothing in this section is part of how STARFALL is meant
+to be played.
+
+### Dev build vs. release build
+
+``` bash
+make dev       # Developer build (bin/Debug/starfall) - toolkit included
+make release   # Release build (bin/Release/starfall) - toolkit-free
+make           # Same as `make dev` - the default, for day-to-day development
+make clean     # Remove both build outputs
+```
+
+The two differ by exactly one compiler define, `STARFALL_DEV_TOOLS`,
+which the dev build sets and the release build doesn't. Every
+developer-only mechanism in the project - the panel itself
+(`dev_tools.h`/`dev_tools.c`, the latter never even compiled into a
+release build), the Developer Invulnerability flag on `Player`, the
+hitbox/stats diagnostic overlays, and the code in `main.c`/
+`game_render.c` that acts on a panel action - is gated behind this one
+macro. A release build doesn't merely hide these behind a closed
+panel; the panel's real logic, the invulnerability field, and the
+diagnostic-overlay rendering code are not compiled into it at all. The
+Code::Blocks project mirrors this: its Debug target defines
+`STARFALL_DEV_TOOLS` and includes `dev_tools.c`; its Release target
+does neither.
+
+### Opening the panel
+
+**Start a game first, then press grave/backtick (`` ` ``) to open the
+panel.** The toolkit is only reachable from active `GAME_PLAYING` -
+pressing grave on the Title screen, on the Game Over screen, or while
+already paused with **P** does nothing. Pressing grave again (from any
+state) closes the panel.
+
+Opening the panel freezes the run exactly the way **P** does - every
+pause-aware timer in the game (spawn delays, wave duration,
+invulnerability, boss timers, power-up durations, popups) stops
+together and resumes with no jump, however long the panel stayed open.
+**P** itself is unavailable while the panel is open, to avoid the two
+pause mechanisms fighting over the same state.
+
+**P remains STARFALL's normal, always-available pause key** - unrelated
+to the developer toolkit, and present in both build types.
+
+### Menu groups
+
+Navigate with **Up/Down**, select or descend with **Enter**, and use
+each group's **BACK** entry to return to the group list.
+
+| Group | Actions |
+| --- | --- |
+| Navigation | Previous Wave, Next Wave, Jump to Wave 5, Next Boss |
+| Player | Add Life, Developer Invulnerability (toggle) |
+| Power-Ups | Spawn Rapid Fire, Spawn Spread Shot, Spawn Shield |
+| Boss | Skip active boss encounter |
+| Diagnostics | Hitbox overlay (toggle), Runtime stats overlay (toggle) |
+
+Every wave/boss jump fully reconciles boss state and audio first -
+silencing the warning klaxon and any boss music, resetting the boss to
+inactive - so landing on a new wave never leaves a stale fight,
+overlay, or track running from wherever the jump started.
+
+Developer Invulnerability is a separate flag from the timed
+invulnerability window a normal hit grants, and separate again from
+Shield - toggling it for testing can never start, consume, or corrupt
+either. It always resets off at the start of a new game.
+
+### Hitbox & stats overlays
+
+Both are persistent, gameplay-visible toggles - once turned on from the
+Diagnostics group, they stay visible whether the panel is open or
+closed, and (by design) carry over across a new game in the same
+session, unlike the panel's menu-open state and Developer
+Invulnerability, which always reset.
+
+- **Hitboxes** draws a magenta outline over the actual collision
+  rectangle of every active entity - player, bullets (player and
+  enemy, including the Bomber's larger bomb hitbox), enemies,
+  asteroids, power-ups, and the boss while it's fightable - using the
+  exact same rectangles `collision.c` itself checks against, not a
+  separate visual approximation.
+- **Stats** shows a compact readout: FPS, current wave, active
+  entity counts per pool, and - only while a boss encounter is
+  actually active - its HP, phase, and music intensity tier, plus any
+  currently-running power-up timers. Every value is read from
+  existing authoritative state; nothing here is a second counter that
+  could drift from what's actually happening. Diagnostics are strictly
+  read-only and never alter collisions, scoring, or timing.
+
+### The legacy B and 5 shortcuts
+
+**B** (skip the active boss fight) and **5** (jump straight to Wave 5)
+predate the Developer Toolkit and remain available in dev builds,
+unchanged in behavior - held-key shortcuts, not menu items, still
+gated on an actual boss wave being active for **B**. As of v0.9.0 they
+are routed through the same `DevAction` architecture the panel's own
+Boss Skip and Jump to Wave 5 items use, so there is exactly one
+implementation of each effect. **Both are development-only controls:
+in a release build, B and 5 have no effect at all.**
+
+------------------------------------------------------------------------
+
 ## Persistent High Score
 
 A dedicated module (`highscore.h`/`highscore.c`) owns all save-file I/O
@@ -1013,6 +1124,7 @@ starfall/
 │   ├── boss.h
 │   ├── bullet.h
 │   ├── collision.h
+│   ├── dev_tools.h
 │   ├── enemy.h
 │   ├── enemy_bullet.h
 │   ├── explosion.h
@@ -1035,6 +1147,7 @@ starfall/
 │   ├── boss.c
 │   ├── bullet.c
 │   ├── collision.c
+│   ├── dev_tools.c
 │   ├── enemy.c
 │   ├── enemy_bullet.c
 │   ├── explosion.c
@@ -1069,6 +1182,7 @@ starfall/
 | `screen_effects.c` | Render-only screen shake & full-screen flash - a viewport/color offset only, never touches gameplay coordinates |
 | `popup.c` | Floating "+value" score popup pool - visualizes score already awarded elsewhere, never awards it itself |
 | `collision.c` | Cross-system collision handling, score results, hit-flash timers & spawning destruction effects |
+| `dev_tools.c` | The v0.9.0 Developer Toolkit's panel UI state, menu navigation & action reporting - **compiled only into dev builds**; see Developer Toolkit below |
 | `audio.c` | SDL2 audio device, procedural weapon/explosion/fanfare/klaxon synthesis & sound mixing |
 | `music.c` | Generic multi-voice music sequencer - voice/note advancement, sample-accurate looping & playback-rate scaling, no game-specific knowledge |
 | `soundtrack.c` | STARFALL's own compositions (title/boss/Game Over themes) & the intent-level API `main.c` calls to trigger them |
@@ -1567,6 +1681,60 @@ began.
     reduction, since responsibility moved out (`game_render.c`,
     `soundtrack.c`) rather than being deleted; every phase treated line
     count as information, never a target
+
+### Developer Toolkit (v0.9.0)
+
+An eight-phase, gameplay-preserving addition of an in-game developer
+panel - see Developer Toolkit above for what it does. Built as a
+removable, development-only subsystem from the start: every phase
+verified both a dev build (`make dev`, `STARFALL_DEV_TOOLS` defined)
+and a release build (`make release`, undefined) before moving on.
+
+-   [x] Phase 1 - architecture audit: identified the single compile-time
+    boundary (`STARFALL_DEV_TOOLS`, concentrated in `dev_tools.h`) and
+    the "developer module reports, gameplay code performs" dispatch
+    pattern used throughout
+-   [x] Phase 2 - panel skeleton: open/closed state, panel
+    rendering, and the dev/release dual-branch header structure,
+    activated with grave/backtick (chosen over the originally-planned
+    F1 - F1-F3 double as hardware volume keys on some machines)
+-   [x] Phase 3 - full menu navigation (group list -> item list -> BACK),
+    the `DevAction` reporting enum, and a visible selection indicator
+    (`>` cursor plus a green/white color split - an early version had
+    neither and was invisible in testing)
+-   [x] Post-Phase-3 fix - closed a leak where grave could still
+    pause/unpause gameplay in a release build; resolved by moving the
+    open/close *decision* itself into `dev_tools_handle_toggle()`
+    (dev_tools.h), making it architecturally impossible - not just
+    unreachable in practice - for release to reach either pause
+    function via grave
+-   [x] Phase 4 - Navigation, Player (Add Life), Power-Ups, and Boss
+    Skip actions wired to real gameplay effects, reusing existing
+    systems throughout (`wave_debug_jump()`, `wave_get_difficulty()`,
+    `powerups_spawn()`) rather than duplicating them
+-   [x] Phase 5 - Developer Invulnerability added to `Player`, using the
+    same "architecturally impossible in release" pattern proven out by
+    the grave-key fix, rather than the originally-deferred direct field
+-   [x] Phase 6 - Hitbox overlay (reusing `collision.c`'s own
+    `bullet_hitbox_rect()`/`enemy_bullet_hitbox_rect()`, extracted from
+    previously-duplicated literals) and a runtime Stats overlay
+    (FPS, wave, entity counts, boss status, power-up timers), both
+    persistent toggles independent of the panel being open
+-   [x] Phase 7 - safety/edge-case audit across every game state (title,
+    paused, player-death, Game Over, boss warning, active boss, Wave
+    6+); confirmed the existing pause-aware `game_ticks()` design (from
+    the v0.8.0 refactor) already made arbitrarily long panel-open
+    periods safe for every timer with no changes needed
+-   [x] Phase 8 - final audit and release separation: `B`/`5` migrated
+    into the same `DevAction` architecture the panel itself uses (one
+    implementation of each effect, not two); Developer Invulnerability,
+    the hitbox/stats overlays, and the panel's action-dispatch code
+    upgraded from "unreachable in release" to physically excluded from
+    a release build's compiled code entirely; README documentation
+    added
+-   [x] Verified via all four build configurations (dev/release, each
+    normal and with `-Wall -Wextra -Wpedantic`) and a one-off
+    AddressSanitizer/UndefinedBehaviorSanitizer smoke build, all clean
 
 ### Future
 

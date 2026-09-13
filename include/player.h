@@ -23,6 +23,31 @@ typedef struct
     int invulnerable;
     Uint32 invulnerable_until;
 
+    // Developer-only invulnerability (v0.9.0 Developer Toolkit) -
+    // deliberately a completely separate flag from invulnerable above
+    // and from Shield (PowerUpState.shield_active), so toggling this
+    // for testing can never start/consume/corrupt either of those.
+    // Unlike invulnerable, this has no timer and no blink - it stays
+    // set until explicitly toggled off again.
+    //
+    // Compiled out entirely in a toolkit-free release build (v0.9.0
+    // Phase 8 release compile-out audit) - a Phase 5/6 version of this
+    // field left it here unconditionally, reachable only in theory
+    // (nothing outside the developer panel's own dispatch, itself
+    // unreachable there, ever set it); Phase 8 upgraded that to
+    // physical exclusion instead. This is a deliberate, narrow
+    // exception to "normal gameplay modules don't check
+    // STARFALL_DEV_TOOLS" (see dev_tools.h's top comment): the macro
+    // is a plain build-flag check, not a #include of dev_tools.h
+    // itself, so player.h still has no type/API dependency on the
+    // toolkit - and there's no way to "concentrate" state that has to
+    // live ON Player without either this, or teaching dev_tools.c to
+    // reach into gameplay structs directly (exactly what that
+    // module's own design rules out).
+#ifdef STARFALL_DEV_TOOLS
+    int dev_invulnerable;
+#endif
+
     // The score total that triggers the next extra life. Advances
     // (see player_check_extra_life()) every time it's reached, so
     // this is always "how far away is the next one", not a fixed

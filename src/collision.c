@@ -173,13 +173,7 @@ int collisions_bullets_enemies(
             continue;
         }
 
-        SDL_Rect bullet_rect =
-        {
-            (int)bullets[b].x,
-            (int)bullets[b].y,
-            3,
-            1
-        };
+        SDL_Rect bullet_rect = bullet_hitbox_rect(&bullets[b]);
 
         for (int e = 0; e < MAX_ENEMIES; e++)
         {
@@ -344,25 +338,7 @@ int collisions_player_enemy_bullets(
             continue;
         }
 
-        // Bombs are drawn bigger than laser bolts, so give them a
-        // bigger hitbox to match - otherwise they'd feel like they
-        // "should" have hit when they visually clip the player.
-        SDL_Rect bullet_rect;
-
-        if (bullets[b].type == ENEMY_BULLET_BOMB)
-        {
-            bullet_rect.x = (int)bullets[b].x - 1;
-            bullet_rect.y = (int)bullets[b].y - 1;
-            bullet_rect.w = 3;
-            bullet_rect.h = 3;
-        }
-        else
-        {
-            bullet_rect.x = (int)bullets[b].x;
-            bullet_rect.y = (int)bullets[b].y;
-            bullet_rect.w = 2;
-            bullet_rect.h = 1;
-        }
+        SDL_Rect bullet_rect = enemy_bullet_hitbox_rect(&bullets[b]);
 
         if (check_collision(&player_rect, &bullet_rect))
         {
@@ -407,13 +383,7 @@ int collisions_bullets_asteroids(
             continue;
         }
 
-        SDL_Rect bullet_rect =
-        {
-            (int)bullets[b].x,
-            (int)bullets[b].y,
-            3,
-            1
-        };
+        SDL_Rect bullet_rect = bullet_hitbox_rect(&bullets[b]);
 
         for (int a = 0; a < MAX_ASTEROIDS; a++)
         {
@@ -666,13 +636,7 @@ int collisions_bullets_boss(
             continue;
         }
 
-        SDL_Rect bullet_rect =
-        {
-            (int)bullets[b].x,
-            (int)bullets[b].y,
-            3,
-            1
-        };
+        SDL_Rect bullet_rect = bullet_hitbox_rect(&bullets[b]);
 
         if (check_collision(&bullet_rect, &boss_rect))
         {

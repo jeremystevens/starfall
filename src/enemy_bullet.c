@@ -15,6 +15,31 @@ void enemy_bullets_init(EnemyBullet bullets[])
     }
 }
 
+SDL_Rect enemy_bullet_hitbox_rect(const EnemyBullet *bullet)
+{
+    SDL_Rect rect;
+
+    // Bombs are drawn bigger than laser bolts, so give them a bigger
+    // hitbox to match - otherwise they'd feel like they "should" have
+    // hit when they visually clip the player.
+    if (bullet->type == ENEMY_BULLET_BOMB)
+    {
+        rect.x = (int)bullet->x - 1;
+        rect.y = (int)bullet->y - 1;
+        rect.w = 3;
+        rect.h = 3;
+    }
+    else
+    {
+        rect.x = (int)bullet->x;
+        rect.y = (int)bullet->y;
+        rect.w = 2;
+        rect.h = 1;
+    }
+
+    return rect;
+}
+
 // Fire a laser bolt from a Scout's position.
 // Returns 1 if a bullet was fired, 0 if the pool was full.
 int enemy_bullets_fire(

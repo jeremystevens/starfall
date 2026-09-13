@@ -21,6 +21,7 @@
 #include "popup.h"
 #include "soundtrack.h"
 #include "game_render.h"
+#include "dev_tools.h"
 
 // Target frame rate for the main loop.
 #define TARGET_FPS 60
@@ -309,22 +310,57 @@ static void toggle_pause(GameRuntime *runtime)
 
 // Polls every SDL event queued this frame and reacts only to the ones
 // the state machine cares about: window close, and discrete
-// (non-repeat) SPACE/ENTER/P key-downs. Deliberately does not perform
-// any gameplay update beyond the pause toggle itself - starting a new
-// game or leaving GAME_OVER are only requested here, via the two
-// out-parameters, never actually carried out. That mirrors the
-// original inline loop's own ordering: main()'s caller still applies
-// those two requests later in the same frame, after gameplay
-// processing has already run against the state as it was at the start
-// of the frame - see the call site for why that ordering matters.
-// Continuous keyboard state (SDL_GetKeyboardState(), used for firing
-// and pause-time movement) is a completely separate concern and is
-// never touched here.
+// (non-repeat) SPACE/ENTER/P/grave key-downs. Deliberately does not
+// perform any gameplay update beyond the pause toggle itself -
+// starting a new game or leaving GAME_OVER are only requested here,
+// via the two out-parameters, never actually carried out. That
+// mirrors the original inline loop's own ordering: main()'s caller
+// still applies those two requests later in the same frame, after
+// gameplay processing has already run against the state as it was at
+// the start of the frame - see the call site for why that ordering
+// matters. Continuous keyboard state (SDL_GetKeyboardState(), used
+// for firing and pause-time movement) is a completely separate
+// concern and is never touched here.
+//
+// The grave/backtick key (SDL_SCANCODE_GRAVE) toggles the developer
+// panel - chosen over F1 since F1-F3 are hardware volume controls on
+// at least one development machine. main.c does NOT decide for itself
+// whether a grave press should open or close anything - that decision
+// (including whether the panel is even allowed to open from the
+// current GameState) belongs entirely to dev_tools_handle_toggle(),
+// which reports back a DevToggleResult. main.c only ever calls
+// runtime_begin_pause()/runtime_end_pause() in direct response to
+// DEV_TOGGLE_OPEN/DEV_TOGGLE_CLOSE - the same pause mechanism P uses,
+// just reused rather than reinvented. This split matters for exactly
+// one reason: it's what makes it architecturally impossible for a
+// release build (where that function can only ever return
+// DEV_TOGGLE_NONE) to pause gameplay through grave at all, rather than
+// merely relying on dev_tools->open happening to stay 0. While
+// dev_tools->open, P is suppressed here so a stray pause-toggle can't
+// desync from the panel (the panel already froze gameplay via
+// GAME_PAUSED; unpausing out from under it while it's still drawn
+// would leave gameplay running with the panel still on screen). SPACE
+// and the GAME_OVER use of ENTER need no such guard: both only ever
+// fire from GAME_TITLE/GAME_OVER, neither of which the panel can be
+// open during - ENTER is still explicitly guarded below anyway, purely
+// for defensiveness (it costs nothing and protects against a future
+// state change making that overlap possible).
+//
+// While the panel is open, Up/Down/Enter go to
+// dev_tools_handle_key() instead - navigating the panel must not also
+// fire whatever those keys mean elsewhere. Only a real leaf action
+// (never plain navigation, never the synthetic BACK entry) is ever
+// written to *dev_action_requested to report back to main()'s
+// dispatch switch (see its own comment) - navigation alone always
+// leaves it at DEV_ACTION_NONE, the same value it starts each frame
+// at.
 static void process_input_events(
     GameRuntime *runtime,
+    DevTools *dev_tools,
     int *running,
     int *start_game_requested,
-    int *return_to_title_requested
+    int *return_to_title_requested,
+    DevAction *dev_action_requested
 )
 {
     SDL_Event event;
@@ -343,23 +379,51 @@ static void process_input_events(
         // event.key.repeat is nonzero for the auto-repeated key-down
         // events SDL sends while a key stays held - checking for it
         // being 0 means this only latches once per physical press.
+        // That already covers "prevent held keys from firing an
+        // action repeatedly" for the panel's own Up/Down/Enter below,
+        // with no extra debounce logic needed.
         if (event.type == SDL_KEYDOWN && !event.key.repeat)
         {
             if (event.key.keysym.scancode == SDL_SCANCODE_SPACE &&
-                    runtime->game_state == GAME_TITLE)
+                    runtime->game_state == GAME_TITLE && !dev_tools->open)
             {
                 *start_game_requested = 1;
             }
 
             if (event.key.keysym.scancode == SDL_SCANCODE_RETURN &&
-                    runtime->game_state == GAME_OVER)
+                    runtime->game_state == GAME_OVER && !dev_tools->open)
             {
                 *return_to_title_requested = 1;
             }
 
-            if (event.key.keysym.scancode == SDL_SCANCODE_P)
+            if (event.key.keysym.scancode == SDL_SCANCODE_P && !dev_tools->open)
             {
                 toggle_pause(runtime);
+            }
+
+            if (event.key.keysym.scancode == SDL_SCANCODE_GRAVE)
+            {
+                DevToggleResult toggle = dev_tools_handle_toggle(
+                    dev_tools,
+                    runtime->game_state == GAME_PLAYING
+                );
+
+                if (toggle == DEV_TOGGLE_OPEN)
+                {
+                    runtime_begin_pause(runtime);
+                }
+                else if (toggle == DEV_TOGGLE_CLOSE)
+                {
+                    runtime_end_pause(runtime);
+                }
+            }
+            else if (dev_tools->open &&
+                    (event.key.keysym.scancode == SDL_SCANCODE_UP ||
+                     event.key.keysym.scancode == SDL_SCANCODE_DOWN ||
+                     event.key.keysym.scancode == SDL_SCANCODE_RETURN))
+            {
+                *dev_action_requested =
+                    dev_tools_handle_key(dev_tools, event.key.keysym.scancode);
             }
         }
     }
@@ -773,8 +837,8 @@ static void update_projectiles_and_collisions(
 // than split further - every step here shares timers/pools with its
 // neighbors, and the instructions for this extraction call for
 // preserving that sharing intact. Returns the difficulty lookup since
-// update_wave_and_debug() below still needs difficulty.boss_wave for
-// the B debug key.
+// the main loop still needs difficulty.boss_wave to gate the legacy B
+// hotkey (see dev_tools_handle_legacy_shortcuts()).
 static WaveDifficulty update_threats(
     GameRuntime *runtime,
     const WaveState *wave,
@@ -1065,62 +1129,119 @@ static void update_boss_and_extra_life(
     }
 }
 
-// Wave progression, plus the two development shortcuts (B to skip a
-// boss fight, 5 to jump to Wave 5) - grouped together as "remaining
-// gameplay-only bookkeeping" for this frame. These shortcuts are
-// intentional development tools (useful for testing later waves,
-// bosses, music, and transitions without replaying the whole game)
-// and are deliberately left in place, unmodified, by every phase of
-// the v0.8.0 main.c refactor - a dedicated developer/debug system may
-// replace them in a future version, but that's out of scope here.
-static void update_wave_and_debug(
-    GameRuntime *runtime,
-    WaveState *wave,
-    Boss *boss,
-    const Uint8 *keyboard,
-    WaveDifficulty difficulty,
-    LaserSound *laser
-)
+// Advance wave progression for one frame. Only ticks while playing,
+// so waves stay frozen during GAME_OVER like everything else.
+//
+// Formerly also housed the B (boss skip) and 5 (Wave 5 jump) debug
+// hotkeys directly. v0.9.0 Phase 8 migrated both into the Developer
+// Toolkit's DevAction architecture (see
+// dev_tools_handle_legacy_shortcuts() and the dev-action dispatch
+// switch below) so there is exactly one implementation of each
+// effect - the same one the panel's own BOSS_SKIP/WAVE_JUMP_5 items
+// use - rather than two copies that could drift apart. This function
+// shrank to just the wave-progression call as a direct result; it no
+// longer needs the keyboard state or WaveDifficulty that migration
+// made obsolete for it specifically.
+static void update_wave_progression(GameRuntime *runtime, WaveState *wave)
 {
-    // One snapshot for the whole function - see
-    // update_player_movement()'s identical comment above for why this
-    // is safe.
     Uint32 now = game_ticks(runtime);
 
-    // Advance wave progression. Only ticks while playing, so
-    // waves stay frozen during GAME_OVER like everything else.
     wave_update(wave, now);
-
-    // TEMPORARY DEBUG: press B during a boss wave to skip
-    // straight past the fight instead of playing it out - the
-    // real defeat path (Phase 9/10) handles this normally now,
-    // this is just a fast-forward for testing. Resets the
-    // boss too, so it's safe to press at any point mid-fight -
-    // including mid-warning, which is why the klaxon is
-    // explicitly stopped here too rather than assuming
-    // BOSS_WARNING_ENDED already handled it - without leaving
-    // a stale ENTERING/ACTIVE boss (or a stuck alarm) behind on
-    // the next (non-boss) wave. Mountain King is stopped here
-    // too (v0.8.0 Phase 5B) for the same reason - skipping the
-    // fight this way never goes through BOSS_JUST_DEFEATED, so
-    // without this, the boss theme would otherwise keep looping
-    // straight into Wave 6. Remove before release.
-    if (difficulty.boss_wave && keyboard[SDL_SCANCODE_B])
-    {
-        audio_set_boss_warning(laser, 0);
-        soundtrack_stop(laser);
-        wave_advance_after_boss(wave, now);
-        boss_init(boss);
-    }
-
-    // TEMPORARY DEBUG: press 5 to jump straight to Wave 5
-    // instead of playing through 1-4 every time. Speeds up
-    // testing the boss encounter. Remove before release.
-    if (keyboard[SDL_SCANCODE_5])
-    {
-        wave_debug_jump(wave, 5, now);
-    }
 }
+
+// Developer action implementation (v0.9.0 Developer Toolkit) - the
+// "gameplay code performs" half of the "developer module reports,
+// gameplay code performs" boundary (see dev_tools.h's own comment).
+// This helper trio and the dispatch switch far below in main() are
+// physically excluded from a toolkit-free release build (v0.9.0
+// Phase 8 release compile-out audit), not merely dead code kept
+// reachable-in-theory: dev_action_requested can only ever be
+// DEV_ACTION_NONE in that build (dev_tools_handle_key()/
+// dev_tools_handle_toggle()/dev_tools_handle_legacy_shortcuts() all
+// stub to that), so neither half has anything left to do there. Two
+// #ifdef regions, not one contiguous block - main()'s own setup code
+// sits between this file-scope trio and the switch inside its body -
+// but together they're main.c's one deliberate counterpart to
+// dev_tools.h's own boundary: normal gameplay modules
+// (player.c/boss.c/wave.c/etc.) still never check the macro or
+// include dev_tools.h themselves, but main.c is already the
+// integration point between the toolkit and real gameplay state (see
+// dev_tools.h's top comment), so these two clearly-marked regions -
+// rather than scattering per-case ifdefs through the switch, or
+// leaving PLAYER_TOGGLE_INVULNERABLE/DIAG_TOGGLE_HITBOXES/
+// DIAG_TOGGLE_STATS referencing struct fields release no longer
+// carries at all - is the smallest boundary that actually works.
+#ifdef STARFALL_DEV_TOOLS
+
+// Silences whatever boss-specific audio might currently be playing -
+// the warning klaxon and/or the boss soundtrack - without touching
+// anything else. Shared by every developer wave/boss jump below and
+// by DEV_ACTION_BOSS_SKIP, matching exactly what the existing B debug
+// shortcut already does before its own jump.
+static void dev_silence_boss_audio(LaserSound *laser)
+{
+    audio_set_boss_warning(laser, 0);
+    soundtrack_stop(laser);
+}
+
+// Full reconciliation every developer wave-jump action needs before
+// landing on a new wave (v0.9.0 Phase 4) - so a jump away from an
+// in-progress boss encounter can never leave its warning klaxon,
+// soundtrack, or health-bar/warning/defeat overlay running into
+// wherever the jump lands. boss_init() resets BossState back to
+// BOSS_STATE_INACTIVE regardless of which state the boss was in
+// (WARNING/ENTERING/ACTIVE/DYING/DEFEATED), so this is safe to call
+// unconditionally, even when no boss encounter was actually in
+// progress. wave_debug_jump() itself already resets the target wave's
+// own start time and re-triggers its announcement (see wave.c) - the
+// same mechanism the existing 5 shortcut already relies on - so
+// nothing further is needed for those.
+static void dev_jump_to_wave(
+    WaveState *wave,
+    Boss *boss,
+    LaserSound *laser,
+    int target_wave,
+    Uint32 now
+)
+{
+    dev_silence_boss_audio(laser);
+    boss_init(boss);
+    wave_debug_jump(wave, target_wave, now);
+}
+
+// How far past the current wave to search for the next boss
+// encounter before giving up - generous enough for any wave a real
+// run could plausibly reach, while still bounding the search.
+#define DEV_NEXT_BOSS_SEARCH_LIMIT 1000
+
+// Scans forward from current_wave+1 for the next wave
+// wave_get_difficulty() reports as a boss wave (v0.9.0 Phase 4),
+// using a disposable WaveState so the real one is never touched -
+// wave_get_difficulty() only ever reads current_wave, so nothing else
+// needs to be filled in. Queries the same difficulty table every
+// normal wave already goes through rather than hard-coding "5" - once
+// wave.c ever adds a second boss interval, this finds it with no
+// changes here. Returns 0 (not a legal wave number) if nothing
+// qualifies within the search limit, which is simply "no next boss
+// yet" rather than an error.
+static int dev_find_next_boss_wave(int current_wave)
+{
+    for (int candidate = current_wave + 1;
+            candidate <= DEV_NEXT_BOSS_SEARCH_LIMIT;
+            candidate++)
+    {
+        WaveState scratch = { .current_wave = candidate };
+
+        if (wave_get_difficulty(&scratch).boss_wave)
+        {
+            return candidate;
+        }
+    }
+
+    return 0;
+}
+
+#endif // STARFALL_DEV_TOOLS
 
 int main(void)
 {
@@ -1148,6 +1269,21 @@ int main(void)
         .game_over_awaiting_fanfare = 0,
         .score = 0
     };
+
+    // The developer overlay (v0.9.0) - a no-op stub in a toolkit-free
+    // release build (see dev_tools.h). Initialized explicitly, same as
+    // runtime above, rather than relying on zero-initialized stack
+    // memory.
+    DevTools dev_tools;
+    dev_tools_init(&dev_tools);
+
+    // How long the previous frame took to process, in milliseconds -
+    // read by the Phase 6 stats overlay to report FPS. Necessarily
+    // one-frame-lagged: a frame's own duration isn't known until after
+    // its own game_render_frame() call returns, by which point its
+    // RenderContext has already been built and consumed. Updated
+    // alongside frame_time at the bottom of the main loop, below.
+    Uint32 last_frame_duration_ms = 0;
 
     // SDL_Init() returns 0 on success and a non-zero value on failure.
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0)
@@ -1330,15 +1466,26 @@ int main(void)
         // title screen the player never actually chose to leave.
         int return_to_title_requested = 0;
 
+        // Set for this frame only when the developer panel reports a
+        // real leaf action (see process_input_events()'s and
+        // dev_tools_handle_key()'s own comments) - DEV_ACTION_NONE the
+        // rest of the time, including every frame the panel is closed
+        // or merely being navigated. Dispatched below, after gameplay
+        // processing, the same way start_game_requested and
+        // return_to_title_requested already are.
+        DevAction dev_action_requested = DEV_ACTION_NONE;
+
         // Poll every SDL event queued this frame and react to window
-        // close and discrete SPACE/ENTER/P key-downs - see
-        // process_input_events()'s own comment for exactly what this
-        // does and does not do.
+        // close and discrete SPACE/ENTER/P/grave/Up/Down key-downs -
+        // see process_input_events()'s own comment for exactly what
+        // this does and does not do.
         process_input_events(
             &runtime,
+            &dev_tools,
             &running,
             &start_game_requested,
-            &return_to_title_requested
+            &return_to_title_requested,
+            &dev_action_requested
         );
 
         // Get the current state of the keyboard.
@@ -1416,14 +1563,27 @@ int main(void)
                 &laser
             );
 
-            update_wave_and_debug(
-                &runtime,
-                &wave,
-                &boss,
-                keyboard,
-                difficulty,
-                &laser
-            );
+            update_wave_progression(&runtime, &wave);
+
+            // Legacy B/5 debug hotkeys (v0.9.0 Phase 8 migration) -
+            // translated into the same DevAction values the panel's
+            // own BOSS_SKIP/WAVE_JUMP_5 items report, then merged into
+            // this frame's dev_action_requested exactly as if the
+            // panel itself had reported them, so the dispatch switch
+            // below is the only place either effect is implemented.
+            // Guarded on still being DEV_ACTION_NONE purely for
+            // defensiveness - the panel can only report a real action
+            // while dev_tools.open is true, which forces
+            // game_state == GAME_PAUSED, so this GAME_PLAYING-only
+            // block and a panel-reported action can never actually
+            // coexist on the same frame; this costs nothing and
+            // protects against a future state change making that
+            // overlap possible.
+            if (dev_action_requested == DEV_ACTION_NONE)
+            {
+                dev_action_requested =
+                    dev_tools_handle_legacy_shortcuts(keyboard, difficulty.boss_wave);
+            }
 
         } // end GAME_PLAYING
 
@@ -1433,6 +1593,143 @@ int main(void)
         // update_player_movement()'s comment): nothing between here
         // and the end of the frame can toggle the pause state.
         Uint32 now = game_ticks(&runtime);
+
+        // Developer panel action dispatch (v0.9.0, Phase 3) - the
+        // panel only ever reports WHICH action was requested (see
+        // DevAction in dev_tools.h); this switch is where main.c
+        // decides how to actually perform it against the real
+        // gameplay state it already owns, exactly the "developer
+        // module reports, gameplay code performs" boundary the
+        // toolkit spec calls for. DEV_ACTION_NONE is by far the common
+        // case: every frame the panel is closed, or is merely being
+        // navigated rather than activating a real action.
+        //
+        // The second half of main.c's one dev-action #ifdef region
+        // (see dev_silence_boss_audio()'s own comment, above main()) -
+        // physically excluded from a toolkit-free release build, not
+        // just dead code, since two of these cases
+        // (PLAYER_TOGGLE_INVULNERABLE, DIAG_TOGGLE_HITBOXES/_STATS)
+        // reference Player.dev_invulnerable and
+        // DevTools.show_hitboxes/show_stats - fields that build no
+        // longer carries at all (v0.9.0 Phase 8), so this switch
+        // simply wouldn't compile there anymore, not merely go unused.
+#ifdef STARFALL_DEV_TOOLS
+        switch (dev_action_requested)
+        {
+        case DEV_ACTION_NONE:
+            break;
+
+        case DEV_ACTION_WAVE_PREVIOUS:
+        {
+            int target_wave = wave.current_wave - 1;
+
+            if (target_wave < 1)
+            {
+                target_wave = 1;
+            }
+
+            dev_jump_to_wave(&wave, &boss, &laser, target_wave, now);
+            break;
+        }
+
+        case DEV_ACTION_WAVE_NEXT:
+            dev_jump_to_wave(&wave, &boss, &laser, wave.current_wave + 1, now);
+            break;
+
+        case DEV_ACTION_WAVE_JUMP_5:
+            // Panel equivalent of the existing 5 shortcut - same
+            // target wave, same full reconciliation, key unchanged.
+            dev_jump_to_wave(&wave, &boss, &laser, 5, now);
+            break;
+
+        case DEV_ACTION_WAVE_NEXT_BOSS:
+        {
+            int next_boss_wave = dev_find_next_boss_wave(wave.current_wave);
+
+            // 0 means "no boss wave found within the search limit" -
+            // e.g. already past Wave 5 with no later boss interval
+            // defined yet. A harmless no-op rather than jumping
+            // somewhere arbitrary.
+            if (next_boss_wave > 0)
+            {
+                dev_jump_to_wave(&wave, &boss, &laser, next_boss_wave, now);
+            }
+
+            break;
+        }
+
+        case DEV_ACTION_BOSS_SKIP:
+            // Preserves the exact same gate and cleanup sequence the
+            // existing B shortcut uses: only acts during an actual
+            // boss wave, advances via wave_advance_after_boss() (the
+            // real "boss defeated, move on" transition) rather than
+            // wave_debug_jump(), and fully resets the boss afterward.
+            if (wave_get_difficulty(&wave).boss_wave)
+            {
+                dev_silence_boss_audio(&laser);
+                wave_advance_after_boss(&wave, now);
+                boss_init(&boss);
+            }
+
+            break;
+
+        case DEV_ACTION_PLAYER_ADD_LIFE:
+            player.lives++;
+            break;
+
+        case DEV_ACTION_PLAYER_TOGGLE_INVULNERABLE:
+            // See Player.dev_invulnerable's own comment - completely
+            // separate from the timed invulnerable window and from
+            // Shield, so this can never corrupt either.
+            player.dev_invulnerable = !player.dev_invulnerable;
+            break;
+
+        case DEV_ACTION_POWERUP_SPAWN_RAPID:
+            // Spawned just ahead of the player (pickups only ever
+            // drift left) rather than granted directly, so the normal
+            // collection path - drifting into it, collisions.c,
+            // pickup SFX, powerup_state_collect() - is what's actually
+            // being tested, the same as a pickup dropped by an enemy.
+            powerups_spawn(
+                powerups,
+                player.x + player.width + 6,
+                player.y,
+                POWERUP_RAPID_FIRE
+            );
+            break;
+
+        case DEV_ACTION_POWERUP_SPAWN_SPREAD:
+            powerups_spawn(
+                powerups,
+                player.x + player.width + 6,
+                player.y,
+                POWERUP_SPREAD_SHOT
+            );
+            break;
+
+        case DEV_ACTION_POWERUP_SPAWN_SHIELD:
+            powerups_spawn(
+                powerups,
+                player.x + player.width + 6,
+                player.y,
+                POWERUP_SHIELD
+            );
+            break;
+
+        case DEV_ACTION_DIAG_TOGGLE_HITBOXES:
+            dev_tools.show_hitboxes = !dev_tools.show_hitboxes;
+            break;
+
+        case DEV_ACTION_DIAG_TOGGLE_STATS:
+            dev_tools.show_stats = !dev_tools.show_stats;
+            break;
+        }
+#else
+        // dev_action_requested can only ever be DEV_ACTION_NONE here
+        // (see this region's opening comment) - referenced only to
+        // keep it from reading as an unused variable in this build.
+        (void)dev_action_requested;
+#endif // STARFALL_DEV_TOOLS
 
         // Hand off from the death pause to the real GAME_OVER screen
         // once PLAYER_DEATH_DELAY_MS has elapsed. The high-score
@@ -1564,9 +1861,12 @@ int main(void)
             .powerup_state = &powerup_state,
             .wave = &wave,
             .screen_effects = &screen_effects,
+            .dev_tools = &dev_tools,
             .score = runtime.score,
             .high_score = high_score,
             .new_high_score = runtime.new_high_score,
+            .fps = last_frame_duration_ms > 0 ? (int)(1000 / last_frame_duration_ms) : 0,
+            .boss_music_tier = runtime.boss_music_tier,
             .now = now
         };
 
@@ -1574,6 +1874,12 @@ int main(void)
 
         // Calculate how long this frame took to process.
         Uint32 frame_time = SDL_GetTicks() - frame_start;
+
+        // Remember this frame's processing time for next frame's stats
+        // overlay (see last_frame_duration_ms's own comment) - captured
+        // before the delay below, since the delay is idle wait time,
+        // not processing time.
+        last_frame_duration_ms = frame_time;
 
         // If the frame finished early, wait for the remaining time.
         if (frame_time < FRAME_TIME)

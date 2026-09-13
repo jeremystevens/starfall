@@ -14,7 +14,15 @@ typedef struct
 
 } BitmapCharacter;
 
-// Hand-drawn 5x7 bitmap glyphs for A-Z and 0-9.
+// Hand-drawn 5x7 bitmap glyphs for A-Z and 0-9, plus a single
+// non-alphanumeric addition: '>', added for the v0.9.0 developer
+// panel's menu-selection cursor (see dev_tools.c). text_draw_char()
+// silently draws nothing for any character not in this table while
+// text_draw() still advances the cursor past it, so a menu cursor
+// built from a character the font didn't actually have would render
+// as invisible blank space rather than an error - '>' needed a real
+// glyph, not a substitute letter, to read unambiguously as a
+// selection pointer.
 static const BitmapCharacter font[] =
 {
     // =========================
@@ -491,6 +499,23 @@ static const BitmapCharacter font[] =
             "....#",
             "....#",
             ".###."
+        }
+    },
+
+    // =========================
+    // Selection cursor
+    // =========================
+
+    {
+        '>',
+        {
+            "#....",
+            "##...",
+            ".##..",
+            "..##.",
+            ".##..",
+            "##...",
+            "#...."
         }
     }
 };

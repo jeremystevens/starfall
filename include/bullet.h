@@ -20,6 +20,14 @@ typedef struct
 // Initialize the bullet pool. All bullets start inactive.
 void bullets_init(Bullet bullets[]);
 
+// The collision rectangle for one bullet - 3x1 at its current
+// position. Bullet carries no width/height of its own (unlike every
+// entity type that does), so this was previously duplicated as a
+// literal at every collision.c call site that checks a bullet against
+// something else; now both collision.c and the v0.9.0 Developer
+// Toolkit's hitbox overlay share this single definition instead.
+SDL_Rect bullet_hitbox_rect(const Bullet *bullet);
+
 // Fire a bullet from the player's position if the given cooldown
 // allows it. The caller decides which cooldown to pass (e.g. the
 // normal FIRE_COOLDOWN, or a shorter one while Rapid Fire is active),

@@ -86,8 +86,13 @@ void wave_update(WaveState *wave, Uint32 current_time);
 // the boss doesn't count against the next wave's duration.
 void wave_advance_after_boss(WaveState *wave, Uint32 current_time);
 
-// TEMPORARY DEBUG: jump straight to target_wave for fast iteration
-// while testing. Not part of any real gameplay path.
+// Jump straight to target_wave, skipping the normal per-wave timer -
+// not part of any real gameplay path; used only by the v0.9.0
+// Developer Toolkit's Navigation actions and the legacy B/5 debug
+// hotkeys migrated into that same architecture (see
+// dev_jump_to_wave() and dev_tools_handle_legacy_shortcuts() in
+// main.c/dev_tools.c). Resets the target wave's own start time and
+// re-triggers its announcement, same as a normal wave transition.
 void wave_debug_jump(WaveState *wave, int target_wave, Uint32 current_time);
 
 // Draw the "WAVE X" / wave-name announcement overlay while one is

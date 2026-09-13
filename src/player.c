@@ -32,6 +32,9 @@ void player_init(Player *player)
     player->lives = 3;
     player->invulnerable = 0;
     player->invulnerable_until = 0;
+#ifdef STARFALL_DEV_TOOLS
+    player->dev_invulnerable = 0;
+#endif
     player->next_extra_life_score = EXTRA_LIFE_FIRST_THRESHOLD;
     player->extra_life_notification_until = 0;
     player->extra_life_notification_count = 0;
@@ -104,6 +107,22 @@ int player_take_damage(
     Uint32 current_time
 )
 {
+    // Developer-only invulnerability (see Player.dev_invulnerable) -
+    // checked first, and completely independently of both the timed
+    // invulnerable window and Shield below, so toggling it for
+    // testing can never start, consume, or otherwise corrupt either
+    // of those. Compiled out entirely alongside the field itself in a
+    // toolkit-free release build (v0.9.0 Phase 8) - see Player's own
+    // comment for why this #ifdef, unlike almost everywhere else in
+    // the project, lives directly in a normal gameplay module rather
+    // than being concentrated in dev_tools.h.
+#ifdef STARFALL_DEV_TOOLS
+    if (player->dev_invulnerable)
+    {
+        return 0;
+    }
+#endif
+
     // Ignore damage while the player is invulnerable.
     if (player->invulnerable || player->lives <= 0)
     {

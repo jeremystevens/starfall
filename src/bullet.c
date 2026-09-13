@@ -10,6 +10,19 @@ void bullets_init(Bullet bullets[])
     }
 }
 
+SDL_Rect bullet_hitbox_rect(const Bullet *bullet)
+{
+    SDL_Rect rect =
+    {
+        (int)bullet->x,
+        (int)bullet->y,
+        3,
+        1
+    };
+
+    return rect;
+}
+
 
 // Fire a bullet if the weapon cooldown has expired.
 int bullets_fire(

@@ -13,6 +13,7 @@
 				<Option compiler="gcc" />
 				<Compiler>
 					<Add option="-g" />
+					<Add option="-DSTARFALL_DEV_TOOLS" />
 					<Add directory="/usr/include/SDL2" />
 				</Compiler>
 				<Linker>
@@ -44,6 +45,9 @@
 		<Unit filename="include/boss.h" />
 		<Unit filename="include/bullet.h" />
 		<Unit filename="include/collision.h" />
+		<Unit filename="include/dev_tools.h">
+			<Option target="Debug" />
+		</Unit>
 		<Unit filename="include/enemy.h" />
 		<Unit filename="include/enemy_bullet.h" />
 		<Unit filename="include/explosion.h" />
@@ -76,6 +80,10 @@
 		</Unit>
 		<Unit filename="src/collision.c">
 			<Option compilerVar="CC" />
+		</Unit>
+		<Unit filename="src/dev_tools.c">
+			<Option compilerVar="CC" />
+			<Option target="Debug" />
 		</Unit>
 		<Unit filename="src/enemy.c">
 			<Option compilerVar="CC" />
