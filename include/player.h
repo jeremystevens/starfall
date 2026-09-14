@@ -103,6 +103,11 @@ int player_take_damage(
 // should. Also arms the extra_life_notification_* fields above when at
 // least one life is awarded, purely as a side effect for rendering -
 // awarding lives is still the only thing this function actually does.
+// A no-op once lives is already 0 (v0.9.1 Phase 6) - the fatal hit and
+// the score gain that crosses a threshold can land in the same frame,
+// and the death transition itself doesn't happen until the next one,
+// so without this guard a death frame could hand back a life before
+// GAME_PLAYER_DEATH ever starts.
 // Returns the number of extra lives awarded this call (usually 0 or 1).
 int player_check_extra_life(Player *player, int score, Uint32 current_time);
 

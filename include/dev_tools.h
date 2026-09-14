@@ -179,10 +179,11 @@ DevAction dev_tools_handle_key(DevTools *dev, SDL_Scancode scancode);
 // shortcuts always had before this migration - not the discrete
 // key-down handling dev_tools_handle_key() above uses. Takes
 // boss_wave_active rather than a WaveState/Boss pointer so this
-// function needs no gameplay-struct knowledge beyond what the caller
-// already computed for its own purposes (see main.c's WaveDifficulty
-// lookup). Independent of dev->open - B/5 are standalone hotkeys, not
-// panel navigation, exactly as they were before this migration.
+// function needs no gameplay-struct knowledge at all - the caller
+// gets it with its own single wave_get_difficulty() call (v0.9.1
+// Phase 3), the same way DEV_ACTION_BOSS_SKIP's handling does.
+// Independent of dev->open - B/5 are standalone hotkeys, not panel
+// navigation, exactly as they were before this migration.
 DevAction dev_tools_handle_legacy_shortcuts(const Uint8 *keyboard, int boss_wave_active);
 
 #else

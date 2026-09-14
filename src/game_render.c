@@ -567,7 +567,7 @@ void game_render_frame(SDL_Renderer *renderer, const RenderContext *ctx)
     if ((ctx->game_state == GAME_PLAYING || ctx->game_state == GAME_PAUSED) &&
             ctx->boss->state != BOSS_STATE_WARNING)
     {
-        wave_render_announcement(renderer, ctx->wave);
+        wave_render_announcement(renderer, ctx->wave, ctx->now);
     }
 
     // PAUSED overlay - drawn on top of the frozen battlefield the

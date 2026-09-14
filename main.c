@@ -1,6 +1,6 @@
 // SDL port of my original Pyxel/Python space shooter.
-#include <stdio.h>  // printf() for console output and error messages
-#include <SDL.h>    // SDL2 functions, types, and constants
+#include <stdio.h>
+#include <SDL.h>
 
 // Game systems, each with its own header.
 #include "player.h"
@@ -55,8 +55,8 @@
 #define PLAYER_DEATH_FLASH_DURATION_MS 300
 
 // Main-owned bookkeeping for the current run and the game's state
-// machine - consolidated here (v0.8.0 main.c refactor, Phase 3) so
-// every piece of "what state is this run in, and since when" lives in
+// machine - consolidated here so every piece of "what state is this
+// run in, and since when" lives in
 // one place instead of being scattered across file-scope statics and
 // main()-local variables. Deliberately NOT a "God struct": entity
 // pools (player, enemies, bullets, ...) and the per-subsystem spawn
@@ -142,8 +142,8 @@ typedef struct
     int new_high_score;
 
     // True while GAME_OVER is waiting for the new-high-score fanfare
-    // to actually finish before starting the Funeral March (v0.8.0
-    // Phase 6B) - set only at the GAME_PLAYER_DEATH -> GAME_OVER
+    // to actually finish before starting the Funeral March - set only
+    // at the GAME_PLAYER_DEATH -> GAME_OVER
     // handoff below when this run set a new record, and cleared either
     // once audio_new_high_score_finished() reports true (the normal
     // path) or by ENTER cancelling Game Over audio early. Never set
@@ -151,13 +151,11 @@ typedef struct
     // immediately in that case instead.
     int game_over_awaiting_fanfare;
 
-    // The current run's score. Was a plain file-scope global before
-    // this phase; moved here since nothing outside main.c ever reads
-    // or writes it directly - every other module either receives it
-    // as a parameter (e.g. player_check_extra_life()) or returns
-    // points earned for main.c to add (e.g. every collisions_*()
-    // function), confirmed by an audit across the whole project during
-    // this phase.
+    // The current run's score. Lives here rather than as a file-scope
+    // global since nothing outside main.c ever reads or writes it
+    // directly - every other module either receives it as a parameter
+    // (e.g. player_check_extra_life()) or returns points earned for
+    // main.c to add (e.g. every collisions_*() function).
     int score;
 
 } GameRuntime;
@@ -167,9 +165,9 @@ typedef struct
 // exists instead of calling SDL_GetTicks() directly. The one exception
 // is the frame-rate cap at the bottom of the main loop, which measures
 // real wall-clock frame duration and must not be shifted or frozen by
-// this. Takes runtime explicitly (rather than reaching into a file-scope
-// static, as the pre-Phase-3 version of this function did) so the
-// dependency is visible at every call site instead of hidden.
+// this. Takes runtime explicitly, rather than reaching into a
+// file-scope static, so the dependency is visible at every call site
+// instead of hidden.
 static Uint32 game_ticks(const GameRuntime *runtime)
 {
     if (runtime->is_paused)
@@ -189,13 +187,8 @@ static Uint32 game_ticks(const GameRuntime *runtime)
 // current_time is passed in (rather than each system calling
 // game_ticks() itself) so every timer this touches - Wave 1's
 // announcement included - is anchored to the exact moment the run
-// actually begins. That matters: wave_init() used to only run once,
-// at program startup, so its "how long has this announcement been
-// showing" timer started counting from launch instead of from
-// whenever the player actually pressed SPACE. Sit on the title screen
-// for a couple of seconds and the announcement had already silently
-// expired before Wave 1 ever became visible. Calling wave_init() here
-// - exactly when a run starts - fixes that.
+// actually begins, not to however long the title screen happened to
+// be sitting idle before SPACE was pressed.
 //
 // Only resets the two GameRuntime fields a fresh run actually needs to
 // start clean (score, new_high_score) - every other runtime field
@@ -365,12 +358,8 @@ static void process_input_events(
 {
     SDL_Event event;
 
-    // &event passes the address of our event variable so that
-    // SDL_PollEvent() can write event information into it.
     while (SDL_PollEvent(&event))
     {
-        // SDL_QUIT occurs when the user requests that the
-        // application close, such as clicking the window's X button.
         if (event.type == SDL_QUIT)
         {
             *running = 0;
@@ -674,11 +663,10 @@ static void update_player_firing(
 // The standard response to the player taking a hit - a burst of the
 // player-explosion SFX plus the standard-magnitude screen shake, used
 // identically at all four player-damage sites in
-// update_projectiles_and_collisions() below (v0.8.0 main.c refactor,
-// Phase 6). Each call site still independently decides WHETHER the
-// player was actually damaged this frame (its own collision return
-// value/out-parameter, unchanged); this only consolidates what happens
-// once that's already true.
+// update_projectiles_and_collisions() below. Each call site still
+// independently decides WHETHER the player was actually damaged this
+// frame (its own collision return value/out-parameter); this only
+// consolidates what happens once that's already true.
 static void respond_to_player_hit(
     ScreenEffects *screen_effects,
     LaserSound *laser,
@@ -715,11 +703,8 @@ static void update_projectiles_and_collisions(
     LaserSound *laser
 )
 {
-    // One snapshot for the whole function - safe because nothing here
-    // can toggle the pause state (see update_player_movement()'s
-    // identical comment above), so every one of the many game_ticks()
-    // calls this function used to make individually would have
-    // returned this exact same value anyway.
+    // One snapshot for the whole function - see
+    // update_player_movement()'s comment above for why this is safe.
     Uint32 now = game_ticks(runtime);
 
     bullets_update(bullets);
@@ -836,10 +821,16 @@ static void update_projectiles_and_collisions(
 // movement update. Kept as one function, in original order, rather
 // than split further - every step here shares timers/pools with its
 // neighbors, and the instructions for this extraction call for
-// preserving that sharing intact. Returns the difficulty lookup since
-// the main loop still needs difficulty.boss_wave to gate the legacy B
-// hotkey (see dev_tools_handle_legacy_shortcuts()).
-static WaveDifficulty update_threats(
+// preserving that sharing intact.
+//
+// Used to return its WaveDifficulty lookup so the main loop could
+// read difficulty.boss_wave for the legacy B hotkey - now that B/5
+// live in the Developer Toolkit (v0.9.1 Phase 3), the one remaining
+// external consumer queries wave_get_difficulty() itself at its own
+// call site (matching DEV_ACTION_BOSS_SKIP just below it), so this
+// function no longer needs to hand its internal lookup back up the
+// call chain at all.
+static void update_threats(
     GameRuntime *runtime,
     const WaveState *wave,
     Boss *boss,
@@ -945,8 +936,6 @@ static WaveDifficulty update_threats(
     }
 
     asteroids_update(asteroids);
-
-    return difficulty;
 }
 
 // Power-up pool movement, player collection, and active-effect
@@ -1080,28 +1069,15 @@ static void update_boss_and_extra_life(
         runtime->boss_music_tier = 1;
     }
 
-    // Continuous HP-driven acceleration - boss.phase (1/2/3) is
-    // already the game's one authoritative GUNSHIP/BARRAGE/
-    // CRITICAL signal, computed from the exact same >66%/<=66%/
-    // <=33% health thresholds this phase wants, so this reuses
-    // it directly rather than tracking a second copy of the
-    // boss's health percentage. Only calls the playback-rate
-    // setter on an actual tier CHANGE (boss_music_tier differing
-    // from boss.phase), never every frame - and, critically,
-    // ONLY the rate setter: no start/restart function is called
-    // here, so the shared MusicState's note_index/phase/
-    // samples_into_note for both voices carry on completely
-    // undisturbed, exactly where the performance already was.
-    // boss.phase itself never regresses (see its own comment in
-    // boss.c - no healing mechanic exists in this game), so
-    // these tiers are naturally one-way as a consequence, not
-    // because this code enforces it. A single big hit that
-    // drops health from >66% straight past 33% still resolves
-    // correctly: boss.c's phase check cascades 1->2->3 across
-    // at most two consecutive frames (a fraction of a frame's
-    // difference, inaudible as a distinct intermediate tempo),
-    // and this code just mirrors whatever boss.phase says on
-    // each of those frames, landing on the correct final 1.30x.
+    // boss.phase (1/2/3) is already the authoritative health-tier
+    // signal (GUNSHIP/BARRAGE/CRITICAL), so this reuses it instead of
+    // tracking a second copy of the boss's health. Only calls the
+    // playback-rate setter on a tier CHANGE, and only the rate setter -
+    // no restart - so the shared MusicState's note position carries on
+    // undisturbed. Tiers are naturally one-way since boss.phase never
+    // regresses; even a hit that skips a tier resolves correctly across
+    // the one or two frames boss.c's own phase check takes to cascade,
+    // landing on the right final rate either way.
     if (boss->state == BOSS_STATE_ACTIVE && boss->phase != runtime->boss_music_tier)
     {
         runtime->boss_music_tier = boss->phase;
@@ -1131,17 +1107,6 @@ static void update_boss_and_extra_life(
 
 // Advance wave progression for one frame. Only ticks while playing,
 // so waves stay frozen during GAME_OVER like everything else.
-//
-// Formerly also housed the B (boss skip) and 5 (Wave 5 jump) debug
-// hotkeys directly. v0.9.0 Phase 8 migrated both into the Developer
-// Toolkit's DevAction architecture (see
-// dev_tools_handle_legacy_shortcuts() and the dev-action dispatch
-// switch below) so there is exactly one implementation of each
-// effect - the same one the panel's own BOSS_SKIP/WAVE_JUMP_5 items
-// use - rather than two copies that could drift apart. This function
-// shrank to just the wave-progression call as a direct result; it no
-// longer needs the keyboard state or WaveDifficulty that migration
-// made obsolete for it specifically.
 static void update_wave_progression(GameRuntime *runtime, WaveState *wave)
 {
     Uint32 now = game_ticks(runtime);
@@ -1149,28 +1114,17 @@ static void update_wave_progression(GameRuntime *runtime, WaveState *wave)
     wave_update(wave, now);
 }
 
-// Developer action implementation (v0.9.0 Developer Toolkit) - the
-// "gameplay code performs" half of the "developer module reports,
-// gameplay code performs" boundary (see dev_tools.h's own comment).
-// This helper trio and the dispatch switch far below in main() are
-// physically excluded from a toolkit-free release build (v0.9.0
-// Phase 8 release compile-out audit), not merely dead code kept
-// reachable-in-theory: dev_action_requested can only ever be
-// DEV_ACTION_NONE in that build (dev_tools_handle_key()/
-// dev_tools_handle_toggle()/dev_tools_handle_legacy_shortcuts() all
-// stub to that), so neither half has anything left to do there. Two
-// #ifdef regions, not one contiguous block - main()'s own setup code
-// sits between this file-scope trio and the switch inside its body -
-// but together they're main.c's one deliberate counterpart to
-// dev_tools.h's own boundary: normal gameplay modules
-// (player.c/boss.c/wave.c/etc.) still never check the macro or
-// include dev_tools.h themselves, but main.c is already the
-// integration point between the toolkit and real gameplay state (see
-// dev_tools.h's top comment), so these two clearly-marked regions -
-// rather than scattering per-case ifdefs through the switch, or
-// leaving PLAYER_TOGGLE_INVULNERABLE/DIAG_TOGGLE_HITBOXES/
-// DIAG_TOGGLE_STATS referencing struct fields release no longer
-// carries at all - is the smallest boundary that actually works.
+// Developer action implementation - the "gameplay code performs" half
+// of dev_tools.h's report/perform boundary. This helper trio and the
+// dispatch switch below in main() are physically excluded from a
+// release build, not just unreachable: every dev_tools function stubs
+// dev_action_requested to DEV_ACTION_NONE there, so neither half has
+// anything to do. Split into two #ifdef regions (main()'s own setup
+// code sits between them) rather than one, since a few dispatch cases
+// reference Player.dev_invulnerable and DevTools.show_hitboxes/
+// show_stats - fields a release build doesn't carry at all. Normal
+// gameplay modules (player.c/boss.c/wave.c/etc.) never check the
+// macro themselves; main.c is the one integration point that does.
 #ifdef STARFALL_DEV_TOOLS
 
 // Silences whatever boss-specific audio might currently be playing -
@@ -1185,7 +1139,7 @@ static void dev_silence_boss_audio(LaserSound *laser)
 }
 
 // Full reconciliation every developer wave-jump action needs before
-// landing on a new wave (v0.9.0 Phase 4) - so a jump away from an
+// landing on a new wave - so a jump away from an
 // in-progress boss encounter can never leave its warning klaxon,
 // soundtrack, or health-bar/warning/defeat overlay running into
 // wherever the jump lands. boss_init() resets BossState back to
@@ -1215,8 +1169,8 @@ static void dev_jump_to_wave(
 #define DEV_NEXT_BOSS_SEARCH_LIMIT 1000
 
 // Scans forward from current_wave+1 for the next wave
-// wave_get_difficulty() reports as a boss wave (v0.9.0 Phase 4),
-// using a disposable WaveState so the real one is never touched -
+// wave_get_difficulty() reports as a boss wave, using a disposable
+// WaveState so the real one is never touched -
 // wave_get_difficulty() only ever reads current_wave, so nothing else
 // needs to be filled in. Queries the same difficulty table every
 // normal wave already goes through rather than hard-coding "5" - once
@@ -1245,7 +1199,6 @@ static int dev_find_next_boss_wave(int current_wave)
 
 int main(void)
 {
-    // Create an array capable of storing all background stars.
     Star stars[MAX_STARS];
     starfield_init(stars);
 
@@ -1270,7 +1223,7 @@ int main(void)
         .score = 0
     };
 
-    // The developer overlay (v0.9.0) - a no-op stub in a toolkit-free
+    // The developer overlay - a no-op stub in a toolkit-free
     // release build (see dev_tools.h). Initialized explicitly, same as
     // runtime above, rather than relying on zero-initialized stack
     // memory.
@@ -1278,14 +1231,13 @@ int main(void)
     dev_tools_init(&dev_tools);
 
     // How long the previous frame took to process, in milliseconds -
-    // read by the Phase 6 stats overlay to report FPS. Necessarily
+    // read by the stats overlay to report FPS. Necessarily
     // one-frame-lagged: a frame's own duration isn't known until after
     // its own game_render_frame() call returns, by which point its
     // RenderContext has already been built and consumed. Updated
     // alongside frame_time at the bottom of the main loop, below.
     Uint32 last_frame_duration_ms = 0;
 
-    // SDL_Init() returns 0 on success and a non-zero value on failure.
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0)
     {
         printf("SDL_Init failed: %s\n", SDL_GetError());
@@ -1295,10 +1247,10 @@ int main(void)
     // Load the persisted high score once, here at startup - not on
     // every frame, and not re-read from disk anywhere else. It only
     // changes in memory for the rest of the session (see the
-    // GAME_OVER new-high-score check added in a later phase), which
-    // is also the only time it gets written back out. Deliberately
-    // kept outside GameRuntime: unlike every field there, it survives
-    // across runs rather than being reset by game_start_new().
+    // GAME_OVER new-high-score check below), which is also the only
+    // time it gets written back out. Deliberately kept outside
+    // GameRuntime: unlike every field there, it survives across runs
+    // rather than being reset by game_start_new().
     int high_score = highscore_load();
 
     // Shared state for every procedurally generated sound effect.
@@ -1316,8 +1268,6 @@ int main(void)
     soundtrack_play_title(&laser);
 
     // Create the main game window.
-    // SDL_CreateWindow() returns a pointer to the new window,
-    // or NULL if the window could not be created.
     SDL_Window *window = SDL_CreateWindow(
                              "Starfall",
                              SDL_WINDOWPOS_CENTERED,
@@ -1327,7 +1277,6 @@ int main(void)
                              SDL_WINDOW_SHOWN
                          );
 
-    // Always check pointers returned by SDL before using them.
     if (window == NULL)
     {
         printf("Window creation failed: %s\n", SDL_GetError());
@@ -1336,9 +1285,7 @@ int main(void)
         return 1;
     }
 
-    // Create the renderer used to draw graphics into our window.
-    // -1 tells SDL to choose an appropriate graphics driver.
-    // SDL_RENDERER_ACCELERATED requests hardware-accelerated rendering.
+    // Create the renderer; -1 lets SDL pick a driver.
     SDL_Renderer *renderer = SDL_CreateRenderer(
                                  window,
                                  -1,
@@ -1369,11 +1316,9 @@ int main(void)
         return 1;
     }
 
-    // Create and initialize the player.
     Player player;
     player_init(&player);
 
-    // Create the player's bullet pool.
     Bullet bullets[MAX_BULLETS];
     bullets_init(bullets);
 
@@ -1389,18 +1334,15 @@ int main(void)
     // machine.
     Uint32 last_shot_time = 0;
 
-    // Create the enemy and enemy-bullet pools.
     Enemy enemies[MAX_ENEMIES];
     EnemyBullet enemy_bullets[MAX_ENEMY_BULLETS];
 
     enemies_init(enemies);
     enemy_bullets_init(enemy_bullets);
 
-    // Create and initialize the asteroid pool.
     Asteroid asteroids[MAX_ASTEROIDS];
     asteroids_init(asteroids);
 
-    // Create and initialize the power-up pool.
     PowerUp powerups[MAX_POWERUPS];
     powerups_init(powerups);
 
@@ -1409,7 +1351,6 @@ int main(void)
     PowerUpState powerup_state;
     powerup_state_init(&powerup_state);
 
-    // Create and initialize the shared explosion particle pool.
     ExplosionParticle explosions[MAX_EXPLOSION_PARTICLES];
     explosions_init(explosions);
 
@@ -1438,7 +1379,6 @@ int main(void)
     // Director can tune their rates separately.
     Uint32 last_scout_spawn = 0;
     Uint32 last_bomber_spawn = 0;
-    // Tracks when the last asteroid was spawned.
     Uint32 last_asteroid_spawn = 0;
     // -------------------------
     // Main Game Loop
@@ -1488,8 +1428,6 @@ int main(void)
             &dev_action_requested
         );
 
-        // Get the current state of the keyboard.
-        // This lets us detect keys that are being held down.
         const Uint8 *keyboard = SDL_GetKeyboardState(NULL);
 
         if (runtime.game_state == GAME_PLAYING)
@@ -1530,7 +1468,7 @@ int main(void)
                 &laser
             );
 
-            WaveDifficulty difficulty = update_threats(
+            update_threats(
                 &runtime,
                 &wave,
                 &boss,
@@ -1565,8 +1503,8 @@ int main(void)
 
             update_wave_progression(&runtime, &wave);
 
-            // Legacy B/5 debug hotkeys (v0.9.0 Phase 8 migration) -
-            // translated into the same DevAction values the panel's
+            // Legacy B/5 debug hotkeys - translated into the same
+            // DevAction values the panel's
             // own BOSS_SKIP/WAVE_JUMP_5 items report, then merged into
             // this frame's dev_action_requested exactly as if the
             // panel itself had reported them, so the dispatch switch
@@ -1581,8 +1519,10 @@ int main(void)
             // overlap possible.
             if (dev_action_requested == DEV_ACTION_NONE)
             {
-                dev_action_requested =
-                    dev_tools_handle_legacy_shortcuts(keyboard, difficulty.boss_wave);
+                dev_action_requested = dev_tools_handle_legacy_shortcuts(
+                                            keyboard,
+                                            wave_get_difficulty(&wave).boss_wave
+                                        );
             }
 
         } // end GAME_PLAYING
@@ -1594,25 +1534,13 @@ int main(void)
         // and the end of the frame can toggle the pause state.
         Uint32 now = game_ticks(&runtime);
 
-        // Developer panel action dispatch (v0.9.0, Phase 3) - the
-        // panel only ever reports WHICH action was requested (see
-        // DevAction in dev_tools.h); this switch is where main.c
-        // decides how to actually perform it against the real
-        // gameplay state it already owns, exactly the "developer
-        // module reports, gameplay code performs" boundary the
-        // toolkit spec calls for. DEV_ACTION_NONE is by far the common
-        // case: every frame the panel is closed, or is merely being
-        // navigated rather than activating a real action.
-        //
-        // The second half of main.c's one dev-action #ifdef region
-        // (see dev_silence_boss_audio()'s own comment, above main()) -
-        // physically excluded from a toolkit-free release build, not
-        // just dead code, since two of these cases
-        // (PLAYER_TOGGLE_INVULNERABLE, DIAG_TOGGLE_HITBOXES/_STATS)
-        // reference Player.dev_invulnerable and
-        // DevTools.show_hitboxes/show_stats - fields that build no
-        // longer carries at all (v0.9.0 Phase 8), so this switch
-        // simply wouldn't compile there anymore, not merely go unused.
+        // Developer panel action dispatch - the panel only ever reports
+        // WHICH action was requested (see DevAction in dev_tools.h);
+        // this switch performs it against the real gameplay state.
+        // DEV_ACTION_NONE is the common case (panel closed, or just
+        // being navigated). Second half of the dev-action #ifdef region -
+        // see dev_silence_boss_audio()'s comment above main() for why
+        // this is physically excluded from release, not just unused.
 #ifdef STARFALL_DEV_TOOLS
         switch (dev_action_requested)
         {
@@ -1872,7 +1800,6 @@ int main(void)
 
         game_render_frame(renderer, &render_ctx);
 
-        // Calculate how long this frame took to process.
         Uint32 frame_time = SDL_GetTicks() - frame_start;
 
         // Remember this frame's processing time for next frame's stats
@@ -1881,7 +1808,6 @@ int main(void)
         // not processing time.
         last_frame_duration_ms = frame_time;
 
-        // If the frame finished early, wait for the remaining time.
         if (frame_time < FRAME_TIME)
         {
             SDL_Delay(FRAME_TIME - frame_time);
@@ -1897,12 +1823,8 @@ int main(void)
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     audio_shutdown();
-
-    // Shut down all initialized SDL systems.
     SDL_Quit();
 
-    // Returning 0 tells the operating system that the program
-    // finished successfully.
     return 0;
 
 } // end of main

@@ -165,6 +165,17 @@ int player_check_extra_life(Player *player, int score, Uint32 current_time)
 {
     int awarded = 0;
 
+    // A fatal hit's life loss and this frame's score gain can land in
+    // the same frame (the death transition itself doesn't happen until
+    // next frame - see main.c's update_player_movement() comment), so
+    // without this a score threshold crossed on the exact death frame
+    // would silently hand back a life before GAME_PLAYER_DEATH ever
+    // starts, skipping the death transition entirely.
+    if (player->lives <= 0)
+    {
+        return awarded;
+    }
+
     while (score >= player->next_extra_life_score)
     {
         player->lives++;

@@ -347,7 +347,8 @@ static int announcement_slide_x(int centered_x, int text_w, Uint32 elapsed)
 // announcement_slide_x() above).
 void wave_render_announcement(
     SDL_Renderer *renderer,
-    const WaveState *wave
+    const WaveState *wave,
+    Uint32 now
 )
 {
     if (!wave->announcement_active)
@@ -355,7 +356,7 @@ void wave_render_announcement(
         return;
     }
 
-    Uint32 elapsed = SDL_GetTicks() - wave->announcement_start_time;
+    Uint32 elapsed = now - wave->announcement_start_time;
 
     char wave_line[16];
     snprintf(wave_line, sizeof(wave_line), "WAVE %d", wave->current_wave);

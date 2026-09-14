@@ -100,10 +100,17 @@ void wave_debug_jump(WaveState *wave, int target_wave, Uint32 current_time);
 // to the left, all within the existing WAVE_ANNOUNCEMENT_DURATION_MS
 // window (the transition doesn't change how long it's shown). Does
 // nothing once announcement_active is false, so it's safe to call
-// unconditionally every frame.
+// unconditionally every frame. Takes now (RenderContext.now, i.e.
+// game_ticks()) rather than reading SDL_GetTicks() itself (v0.9.1
+// Phase 7) - announcement_start_time is set from that same pause-aware
+// clock, and this is still called while GAME_PAUSED (see
+// game_render.c's call site) to keep the banner visible, so the slide
+// position needs to freeze right along with it instead of drifting
+// ahead on real time.
 void wave_render_announcement(
     SDL_Renderer *renderer,
-    const WaveState *wave
+    const WaveState *wave,
+    Uint32 now
 );
 
 #endif
